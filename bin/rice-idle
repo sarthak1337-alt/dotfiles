@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# rice-idle - screensaver, then lock, when you walk away.
+#
+#   rice-idle start     start the idle chain (rice-session does this)
+#   rice-idle toggle    stay awake on/off
+#   rice-idle status    JSON for the control centre
+#
+# Timings live in ~/.config/rice/idle.conf (seconds):
+#   SCREENSAVER=300     idle time before the screensaver
+#   LOCK=300            further idle time before the lock
+# Nothing fires while a window is fullscreen or audio is playing. Suspending
+# always locks first.
+set -uo pipefail
+
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+mkdir -p "$run"
+SCREENSAVER=300
+LOCK=300
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/rice/idle.conf"
+[[ -f $conf ]] && . "$conf"
+
+chain_running() { pgrep -u "$UID" -x xidlehook >/dev/null; }
+
+start_chain() {
+  xset s off
+  chain_running || setsid -f xidlehook \
+    --not-when-fullscreen --not-when-audio \
+    --timer "$SCREENSAVER" 'rice-screensaver start' 'rice-screensaver stop' \
+    --timer "$LOCK" 'rice-lock' '' >/dev/null 2>&1
+}
+
+start_sleep_lock() {
+  pgrep -u "$UID" -x xss-lock >/dev/null || setsid -f xss-lock --transfer-sleep-lock -- rice-lock >/dev/null 2>&1
+}
+
+case "${1:-status}" in
+  start)
+    start_sleep_lock
+    [[ -f $run/stay-awake ]] || start_chain
+    ;;
+  toggle)
+    if [[ -f $run/stay-awake ]]; then
+      rm -f "$run/stay-awake"
+      start_chain
+      rice-notify send "Stay awake off" "Screensaver after $((SCREENSAVER / 60)) min, lock $((LOCK / 60)) min later"
+    else
+      touch "$run/stay-awake"
+      pkill -u "$UID" -x xidlehook
+      rice-notify send "Stay awake on" "No screensaver or lock until you turn this off"
+    fi
+    ;;
+  status)
+    jq -cn --argjson awake "$([[ -f $run/stay-awake ]] && echo true || echo false)" \
+      --argjson screensaver "$SCREENSAVER" --argjson lock "$LOCK" \
+      '{awake: $awake, screensaver: $screensaver, lock: ($screensaver + $lock)}'
+    ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

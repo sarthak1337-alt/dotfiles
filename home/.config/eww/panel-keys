@@ -1,0 +1,3 @@
+# sxhkd config that rice-panel runs only while a panel is open.
+Escape
+	rice-panel close

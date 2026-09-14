@@ -1,0 +1,18 @@
+# st-flexipatch patches the rice turns on, one per line, without "_PATCH".
+# st/build.sh flips each to 1 in patches.h. See patches.def.h upstream for the full list.
+
+ALPHA                        # transparency (alt + a / alt + s)
+BOXDRAW                      # gapless box-drawing and braille characters
+CSI_22_23                    # save/restore window title (nvim)
+KEYBOARDSELECT               # select text with the keyboard (ctrl + shift + escape)
+LIGATURES                    # ligatures via harfbuzz
+NEWTERM                      # new terminal in the same directory (ctrl + shift + return)
+OPENURLONCLICK               # ctrl + click opens a link
+SCROLLBACK                   # shift/alt + page up/down, alt + j/k/u/d
+SCROLLBACK_MOUSE             # shift + wheel scrolls back
+SCROLLBACK_MOUSE_ALTSCREEN   # plain wheel scrolls back outside full-screen apps
+SIXEL                        # images in the terminal (chafa, yazi, fzf previews)
+UNDERCURL                    # curly underlines (nvim diagnostics)
+WIDE_GLYPHS                  # Nerd Font icons drawn full width
+XRESOURCES                   # font and colours from Xresources (rice-theme)
+XRESOURCES_RELOAD            # re-read them on USR1, so theme changes reach open terminals

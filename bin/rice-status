@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# rice-status <module> - live text for polybar's rice modules (tail = true).
+# Modules: net bt vol notif indicators media. Each prints a line whenever its
+# state changes, in the same "LABEL value" style as the cpu/ram/gpu modules.
+set -uo pipefail
+
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+mkdir -p "$run"
+
+accent=$(rice-theme get accent)   dim=$(rice-theme get dim)
+urgent=$(rice-theme get urgent)   green=$(rice-theme get green)
+yellow=$(rice-theme get yellow)   magenta=$(rice-theme get magenta)
+
+# label <colour> <LABEL> <value>
+label() { printf '%%{F%s}%s%%{F-} %s\n' "$1" "$2" "$3"; }
+short() { local s="$1" n="$2"; (( ${#s} > n )) && s="${s:0:n-1}…"; printf '%s' "$s"; }
+# wait for anything under $run to change, or give up after $1 seconds
+settle() { inotifywait -qq -t "$1" -e close_write,create,delete "$run" 2>/dev/null; return 0; }
+
+net() {
+  show() {
+    local type conn
+    IFS=: read -r type conn < <(nmcli -t -f TYPE,STATE,CONNECTION device status 2>/dev/null |
+      awk -F: '$2 == "connected" && ($1 == "wifi" || $1 == "ethernet") { print $1 ":" $3; exit }')
+    case "${type:-}" in
+      wifi)     label "$accent" NET "$(short "$conn" 16)" ;;
+      ethernet) label "$accent" NET eth ;;
+      *)        label "$urgent" NET off ;;
+    esac
+  }
+  show
+  nmcli monitor 2>/dev/null | while read -r _; do show; done
+}
+
+bt() {
+  while :; do
+    if ! bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then
+      label "$dim" BT off
+    else
+      local dev
+      dev=$(bluetoothctl devices Connected 2>/dev/null | head -n1 | cut -d' ' -f3-)
+      label "$accent" BT "$(short "${dev:-on}" 14)"
+    fi
+    settle 10
+  done
+}
+
+vol() {
+  show() {
+    local v m
+    read -r _ v m < <(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)
+    if [[ -n ${m:-} ]]; then label "$urgent" VOL muted
+    else label "$green" VOL "$(awk -v v="${v:-0}" 'BEGIN { printf "%d%%", v * 100 + 0.5 }')"; fi
+  }
+  show
+  pactl subscribe 2>/dev/null | grep --line-buffered -E "'change' on (sink|server)" | while read -r _; do show; done
+}
+
+notif() {
+  while :; do
+    local n level
+    n=$(dunstctl count history 2>/dev/null || echo 0)
+    level=$(dunstctl get-pause-level 2>/dev/null || echo 0)
+    if (( level > 0 )); then printf '%%{F%s}󰂛%%{F-}\n' "$yellow"
+    elif (( n > 0 )); then printf '%%{F%s}󰂚%%{F-} %s\n' "$accent" "$n"
+    else printf '%%{F%s}󰂚%%{F-}\n' "$dim"; fi
+    settle 5
+  done
+}
+
+indicators() {
+  while :; do
+    local out="" r
+    [[ -f $run/stay-awake ]] && out+="%{A1:rice-idle toggle:}%{F$yellow}󰅶%{F-}%{A} "
+    pgrep -x gpu-screen-reco >/dev/null && out+="%{A1:rice-capture record:}%{F$urgent}󰑊 REC%{F-}%{A} "
+    pgrep -f 'nerd-dictation begin' >/dev/null && out+="%{A1:rice-dictate toggle:}%{F$magenta}󰍬%{F-}%{A} "
+    r=$(systemctl --user list-timers 'rice-reminder-*' --no-legend 2>/dev/null | grep -c .)
+    (( r > 0 )) && out+="%{A1:rice-reminder list:}%{F$accent}󰢌 $r%{F-}%{A} "
+    printf '%s\n' "${out% }"
+    settle 5
+  done
+}
+
+media() {
+  while :; do
+    echo ""
+    playerctl --follow metadata --format '{{status}}|{{artist}}|{{title}}' 2>/dev/null |
+      while IFS='|' read -r status artist title; do
+        case "$status" in
+          Playing) printf '%%{F%s}󰎆%%{F-} %s\n' "$magenta" "$(short "${artist:+$artist - }$title" 40)" ;;
+          Paused)  printf '%%{F%s}󰏤 %s%%{F-}\n' "$dim" "$(short "$title" 30)" ;;
+          *)       echo "" ;;
+        esac
+      done
+    sleep 2
+  done
+}
+
+case "${1:-}" in
+  net|bt|vol|notif|indicators|media) "$1" ;;
+  *) echo "usage: rice-status net|bt|vol|notif|indicators|media" >&2; exit 2 ;;
+esac

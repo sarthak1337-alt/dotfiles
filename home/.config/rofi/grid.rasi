@@ -1,0 +1,36 @@
+/* Image grid: wallpaper and theme pickers. */
+@import "~/.config/rofi/rice.rasi"
+
+window {
+    width: 980px;
+}
+
+listview {
+    columns:      4;
+    lines:        2;
+    fixed-height: true;
+    flow:         horizontal;
+    padding:      14px;
+    spacing:      10px;
+}
+
+element {
+    orientation: vertical;
+    padding:     10px;
+    spacing:     8px;
+    children:    [ element-icon, element-text ];
+}
+
+element-icon {
+    size:             190px;
+    horizontal-align: 0.5;
+}
+
+element-text {
+    horizontal-align: 0.5;
+    text-color:       @dim;
+}
+
+element selected.normal element-text {
+    text-color: @fg;
+}

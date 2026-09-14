@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# rice-media - now-playing state for the eww panel and bar.
+#
+#   rice-media watch          JSON on every track or play-state change (eww deflisten)
+#   rice-media position       JSON {pos, text} for the seek bar (polled while the panel is open)
+#   rice-media seek <seconds>
+#
+# Album art is copied into ~/.cache/rice/art under a hash of its URL, so the
+# panel only ever points at a file name it created itself.
+set -uo pipefail
+
+art_dir="${XDG_CACHE_HOME:-$HOME/.cache}/rice/art"
+mkdir -p "$art_dir"
+
+clock() { local s=$1; printf '%d:%02d' $((s / 60)) $((s % 60)); }
+
+art_path() {
+  local url="$1" key file path=""
+  [[ -n $url ]] || return 0
+  key="$url"
+  if [[ $url == file://* ]]; then
+    path="${url#file://}"
+    path=$(printf '%b' "${path//%/\\x}")
+    # Browsers reuse one temp file for every track, so local art is keyed by mtime too.
+    key+=":$(stat -c %Y -- "$path" 2>/dev/null)"
+  fi
+  file="$art_dir/$(printf '%s' "$key" | sha1sum | cut -c1-16)"
+  if [[ ! -s $file ]]; then
+    if [[ -n $path ]]; then
+      cp -- "$path" "$file" 2>/dev/null
+    elif [[ $url == http*://* ]]; then
+      curl -fsSL --max-time 5 -o "$file" -- "$url" 2>/dev/null
+    fi
+  fi
+  [[ -s $file ]] && printf '%s' "$file"
+}
+
+emit() {
+  local status="$1" player="$2" title="$3" artist="$4" album="$5" url="$6" length="$7"
+  local secs=$(( ${length:-0} / 1000000 ))
+  jq -cn --arg status "$status" --arg player "$player" --arg title "$title" \
+    --arg artist "$artist" --arg album "$album" --arg art "$(art_path "$url")" \
+    --argjson length "$secs" --arg lengthText "$( (( secs > 0 )) && clock "$secs")" \
+    '{status: $status, player: $player, title: $title, artist: $artist, album: $album,
+      art: $art, length: $length, lengthText: $lengthText}'
+}
+
+watch() {
+  # Unit separator, not tab: read collapses runs of whitespace separators, so an
+  # empty field (browsers often send no album) would shift every later field.
+  local sep=$'\x1f'
+  while :; do
+    emit "Stopped" "" "" "" "" "" 0
+    playerctl --follow metadata --format \
+      "{{status}}${sep}{{playerName}}${sep}{{title}}${sep}{{artist}}${sep}{{album}}${sep}{{mpris:artUrl}}${sep}{{mpris:length}}" 2>/dev/null |
+      while IFS="$sep" read -r status player title artist album url length; do
+        emit "${status:-Stopped}" "$player" "$title" "$artist" "$album" "$url" "${length:-0}"
+      done
+    sleep 2
+  done
+}
+
+case "${1:-}" in
+  watch) watch ;;
+  position)
+    pos=$(playerctl position 2>/dev/null | cut -d. -f1)
+    pos=${pos:-0}
+    jq -cn --argjson pos "$pos" --arg text "$(clock "$pos")" '{pos: $pos, text: $text}'
+    ;;
+  seek)
+    [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "rice-media: seek takes seconds" >&2; exit 2; }
+    playerctl position "$2"
+    ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

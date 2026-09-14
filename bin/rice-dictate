@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# rice-dictate - offline voice typing into the focused window (nerd-dictation).
+#
+#   rice-dictate toggle    start listening, or stop and finish typing
+#   rice-dictate status    on / off
+#
+# The first run downloads a small English speech model (about 40 MB) into
+# ~/.config/nerd-dictation/model. Drop a different VOSK model there to change language.
+set -uo pipefail
+
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+model_dir="${XDG_CONFIG_HOME:-$HOME/.config}/nerd-dictation/model"
+model_url="https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+mkdir -p "$run"
+
+listening() { pgrep -u "$UID" -f 'nerd-dictation begin' >/dev/null; }
+poke() { date +%s%N > "$run/dictation.rev"; }
+
+fetch_model() {
+  local tmp
+  rice-notify send "Dictation" "Downloading the speech model (about 40 MB)…"
+  tmp=$(mktemp -d) || return 1
+  if curl -fsSL -o "$tmp/model.zip" "$model_url" && unzip -q "$tmp/model.zip" -d "$tmp"; then
+    mkdir -p "$(dirname "$model_dir")"
+    mv "$tmp"/vosk-model-* "$model_dir"
+    rm -rf "$tmp"
+    rice-notify send "Dictation" "Model ready. Press super + ctrl + x again to start."
+  else
+    rm -rf "$tmp"
+    rice-notify send "Dictation" "Could not download the speech model"
+    return 1
+  fi
+}
+
+case "${1:-toggle}" in
+  toggle)
+    command -v nerd-dictation >/dev/null || { rice-notify send "Dictation" "Install nerd-dictation-git to dictate"; exit 1; }
+    if listening; then
+      nerd-dictation end
+      poke
+    elif [[ ! -d $model_dir ]]; then
+      fetch_model
+    else
+      setsid -f nerd-dictation begin --simulate-input-tool=XDOTOOL >/dev/null 2>&1
+      poke
+      notify-send -a rice -u low -t 1500 "Dictation" "Listening. super + ctrl + x to stop."
+    fi
+    ;;
+  status) listening && echo on || echo off ;;
+  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

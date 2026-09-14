@@ -1,0 +1,17 @@
+/* Single text input: reminder text, event title, Wi-Fi password. */
+@import "~/.config/rofi/rice.rasi"
+
+window  { width: 520px; }
+mainbox { children: [ inputbar, message ]; }
+
+inputbar {
+    border: 0px;
+}
+
+entry {
+    placeholder: "";
+}
+
+message {
+    border: 1px 0px 0px 0px;
+}

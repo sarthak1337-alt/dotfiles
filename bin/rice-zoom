@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# rice-zoom - zoom into the screen. Scroll to zoom, drag to pan, q or Escape to leave.
+command -v boomer >/dev/null || { rice-notify send "Zoom" "Install boomer-git to zoom"; exit 1; }
+pgrep -x boomer >/dev/null && exit 0
+exec boomer

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# rice-osd <glyph> <label> <percent|text>
+# An on-screen display that replaces itself in place (dunst [osd] rule).
+# A number draws dunst's progress bar; anything else is shown as text.
+glyph="${1:?usage: rice-osd <glyph> <label> <percent|text>}"
+label="${2:-}"
+value="${3:-}"
+tag="osd-${label,,}"
+
+if [[ $value =~ ^[0-9]+$ ]]; then
+  notify-send -a osd -u low -h "int:value:$value" -h "string:x-dunst-stack-tag:$tag" "$glyph  $label  $value%"
+else
+  notify-send -a osd -u low -h "string:x-dunst-stack-tag:$tag" "$glyph  $label  $value"
+fi

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# rice-bar - polybar on every connected monitor.
+#
+#   rice-bar start     (re)launch the bar
+#   rice-bar toggle    hide or show it without restarting
+set -uo pipefail
+
+start() {
+  pkill -u "$UID" -x polybar
+  while pgrep -u "$UID" -x polybar >/dev/null; do sleep 0.1; done
+  local m
+  for m in $(xrandr --query | awk '/ connected/ {print $1}'); do
+    MONITOR="$m" setsid -f polybar --reload top >/dev/null 2>&1
+  done
+}
+
+case "${1:-start}" in
+  start)  start ;;
+  toggle) if pgrep -u "$UID" -x polybar >/dev/null; then polybar-msg cmd toggle >/dev/null; else start; fi ;;
+  *) echo "usage: rice-bar start|toggle" >&2; exit 2 ;;
+esac

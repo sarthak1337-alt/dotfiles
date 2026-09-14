@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# rice-clip copy|paste - one copy/paste shortcut for terminals and GUI apps.
+# Terminals want Ctrl+Shift+C/V; everything else wants Ctrl+C/V.
+set -uo pipefail
+
+class=$(xdotool getactivewindow getwindowclassname 2>/dev/null)
+case "${class,,}" in
+  st|st-256color|kitty|alacritty|xterm|urxvt|org.wezfurlong.wezterm|com.mitchellh.ghostty|rice-float|rice-scratchpad|rice-about)
+    mods=ctrl+shift ;;
+  *)
+    mods=ctrl ;;
+esac
+
+case "${1:-}" in
+  copy)  xdotool key --clearmodifiers "$mods+c" ;;
+  paste) xdotool key --clearmodifiers "$mods+v" ;;
+  *) echo "usage: rice-clip copy|paste" >&2; exit 2 ;;
+esac

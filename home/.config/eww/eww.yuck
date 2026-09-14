@@ -1,0 +1,91 @@
+;; Sakura Line - eww popups.
+;; rice-panel opens one window at a time; every panel is built from the
+;; widgets below so they all look and behave like the rofi menus.
+
+;; ------------------------------------------------------------------ state
+(defvar open_panel "")      ; set by rice-panel; list polls only run while their panel is open
+(defvar cal_offset 0)       ; months away from the current one
+(defvar cal_day "")         ; selected day as YYYY-MM-DD, "" = today
+(defvar cal_input "")       ; text typed into the calendar's add box
+
+(deflisten notifs :initial "{}" "rice-notify watch")
+(deflisten audio  :initial "{}" "rice-audio watch")
+(deflisten media  :initial "{}" "rice-media watch")
+
+(defpoll net     :interval "4s"  :initial "{}" :run-while {open_panel == "network" || open_panel == "hub"}   "rice-net list")
+(defpoll bt      :interval "4s"  :initial "{}" :run-while {open_panel == "bluetooth" || open_panel == "hub"} "rice-bt list")
+(defpoll display :interval "10s" :initial "{}" :run-while {open_panel == "display" || open_panel == "hub"}   "rice-display info")
+(defpoll power   :interval "3s"  :initial "{}" :run-while {open_panel == "power" || open_panel == "hub"}     "rice-power info")
+;; rice-cal reads cal_offset / cal_day itself and pushes fresh data on every click.
+(defpoll month   :interval "60s" :initial "{}" :run-while {open_panel == "calendar"} "rice-cal month")
+(defpoll agenda  :interval "30s" :initial "{}" :run-while {open_panel == "calendar"} "rice-cal agenda")
+(defpoll idle    :interval "3s"  :initial "{}" :run-while {open_panel == "hub"} "rice-idle status")
+
+;; ---------------------------------------------------------------- windows
+;; A transparent layer under the open panel: clicking anywhere else closes it.
+(defwindow closer
+  :monitor 0
+  :geometry (geometry :x "0" :y "0" :width "100%" :height "100%")
+  :stacking "fg"
+  :wm-ignore true
+  (eventbox :class "closer" :onclick "rice-panel close" :onrightclick "rice-panel close"))
+
+;; -------------------------------------------------------- shared widgets
+;; Header: title on the left, optional action buttons on the right.
+(defwidget head [title]
+  (box :class "head" :space-evenly false
+    (label :class "title" :text title :hexpand true :xalign 0)
+    (children)))
+
+(defwidget head-action [glyph onclick ?tip ?active]
+  (button :class "head-action ${active == true ? 'active' : ''}" :onclick onclick :tooltip {tip ?: ""} glyph))
+
+(defwidget section [text]
+  (label :class "section" :xalign 0 :text text))
+
+(defwidget sep []
+  (box :class "sep"))
+
+;; One list row: glyph, title and optional subtitle, value on the right.
+(defwidget row [glyph title ?sub ?value ?onclick ?active ?chev ?dim]
+  (button :class "row ${active == true ? 'active' : ''} ${dim == true ? 'dimmed' : ''}" :onclick {onclick ?: ""}
+    (box :space-evenly false
+      (label :class "glyph" :text glyph)
+      (box :orientation "v" :hexpand true :space-evenly false :valign "center"
+        (label :class "row-title" :xalign 0 :limit-width 30 :text title)
+        (label :class "row-sub" :xalign 0 :limit-width 38 :visible {(sub ?: "") != ""} :text {sub ?: ""}))
+      (label :class "row-value" :visible {(value ?: "") != ""} :text {value ?: ""})
+      (label :class "chev" :visible {chev == true} :text "›"))))
+
+;; A row with a pill switch.
+(defwidget switch-row [glyph title on onclick ?sub]
+  (button :class "row" :onclick onclick
+    (box :space-evenly false
+      (label :class "glyph ${on == true ? 'accent' : ''}" :text glyph)
+      (box :orientation "v" :hexpand true :space-evenly false :valign "center"
+        (label :class "row-title" :xalign 0 :text title)
+        (label :class "row-sub" :xalign 0 :visible {(sub ?: "") != ""} :text {sub ?: ""}))
+      (box :class "switch ${on == true ? 'on' : ''}" :valign "center" :space-evenly false
+        (box :class "knob" :hexpand true :halign {on == true ? "end" : "start"})))))
+
+;; A slider row: clicking the glyph runs onglyph (mute), dragging runs onchange.
+(defwidget slider-row [glyph value onchange ?onglyph ?muted]
+  (box :class "row slider-row" :space-evenly false
+    (button :class "glyph ${muted == true ? 'urgent' : ''}" :onclick {onglyph ?: ""} glyph)
+    (scale :class "slider" :hexpand true :min 0 :max 101 :value {value ?: 0} :onchange onchange)
+    (label :class "row-value slider-value" :xalign 1 :text {muted == true ? "muted" : "${value ?: 0}%"})))
+
+;; An empty-state line inside a list.
+(defwidget empty [text]
+  (label :class "empty" :xalign 0 :text text))
+
+;; ----------------------------------------------------------------- panels
+(include "panels/hub.yuck")
+(include "panels/audio.yuck")
+(include "panels/network.yuck")
+(include "panels/bluetooth.yuck")
+(include "panels/display.yuck")
+(include "panels/power.yuck")
+(include "panels/media.yuck")
+(include "panels/calendar.yuck")
+(include "panels/notifications.yuck")

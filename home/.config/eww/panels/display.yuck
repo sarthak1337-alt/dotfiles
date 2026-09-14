@@ -1,0 +1,30 @@
+;; Display: brightness over DDC, resolution, refresh rate, bar, style shortcuts.
+(defwindow display
+  :monitor 0
+  :geometry (geometry :x "-10px" :y "47px" :width "380px" :anchor "top right")
+  :stacking "fg"
+  :wm-ignore true
+  :resizable false
+  (box :class "panel" :orientation "v" :space-evenly false
+    (head :title "Display"
+      (head-action :glyph "󰸉" :tip "Wallpaper" :onclick "rice-panel close; rice-menu wallpaper")
+      (head-action :glyph "󰏘" :tip "Theme" :onclick "rice-panel close; rice-menu theme"))
+
+    (box :orientation "v" :space-evenly false :visible {display?.ddc == true}
+      (slider-row :glyph "󰃠" :value {display?.brightness ?: 0}
+                  :onchange "rice-display brightness {}"))
+    (box :orientation "v" :space-evenly false :visible {display?.ddc != true}
+      (row :glyph "󰃠" :title "Brightness" :sub {display?.ddcHint ?: ""} :dim true))
+
+    (section :text {display?.output ?: "Output"})
+    (box :orientation "v" :space-evenly false
+      (for m in {display?.modes ?: []}
+        (row :glyph "󰍹" :title {m.mode} :active {m.current} :onclick "rice-display mode ${m.id}")))
+
+    (section :text "Refresh rate")
+    (box :class "pills" :space-evenly true
+      (for r in {display?.rates ?: []}
+        (button :class "pill ${r.current ? 'active' : ''}" :onclick "rice-display rate ${r.id}" {r.label})))
+
+    (sep)
+    (switch-row :glyph "󰍜" :title "Bar" :on {display?.bar == true} :onclick "rice-bar toggle")))

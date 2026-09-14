@@ -1,0 +1,37 @@
+;; Notification centre: recent notifications, dismiss one or all, do-not-disturb.
+(defwindow notifications
+  :monitor 0
+  :geometry (geometry :x "-10px" :y "47px" :width "380px" :anchor "top right")
+  :stacking "fg"
+  :wm-ignore true
+  :resizable false
+  (box :class "panel" :orientation "v" :space-evenly false
+    (head :title "Notifications"
+      (head-action :glyph {notifs?.dnd == true ? "󰂛" : "󰂚"} :active {notifs?.dnd == true}
+                   :tip "Do not disturb" :onclick "rice-notify dnd toggle")
+      (head-action :glyph "󰎟" :tip "Clear all" :onclick "rice-notify clear"))
+
+    (box :orientation "v" :space-evenly false :visible {notifs?.dnd == true && (notifs?.waiting ?: 0) > 0}
+      (row :glyph "󰂛" :title "Held back" :sub "They appear when do-not-disturb is off"
+           :value "${notifs?.waiting ?: 0}" :dim true))
+
+    (box :orientation "v" :space-evenly false :visible {(notifs?.count ?: 0) == 0}
+      (empty :text "You're all caught up"))
+
+    (box :orientation "v" :space-evenly false
+      (for n in {notifs?.items ?: []}
+        (eventbox :class "notif-hit"
+                  :onclick "rice-panel close; rice-notify open ${n.id}"
+          (box :class "notif ${n.urgency == 'CRITICAL' ? 'critical' : ''}" :space-evenly false
+            (box :orientation "v" :hexpand true :space-evenly false
+              (box :space-evenly false
+                (label :class "notif-app" :xalign 0 :hexpand true :limit-width 30 :text {n.app})
+                (label :class "notif-ago" :text {n.ago}))
+              (label :class "notif-summary" :xalign 0 :limit-width 36 :text {n.summary})
+              (label :class "notif-body" :xalign 0 :wrap true :limit-width 140
+                     :visible {n.body != ""} :text {n.body}))
+            (button :class "notif-close" :valign "start" :tooltip "Dismiss"
+                    :onclick "rice-notify remove ${n.id}" "󰅖")))))
+
+    (box :orientation "v" :space-evenly false :visible {(notifs?.count ?: 0) > 8}
+      (row :glyph "󰇘" :title "${notifs?.count - 8} older" :sub "Clear all to start fresh" :dim true))))

@@ -1,0 +1,92 @@
+/* Sakura Line - shared rofi layout. Every menu imports this, then overrides
+   only size and position. Colours come from the rendered theme. */
+@import "~/.local/state/rice/theme/rofi-colors.rasi"
+
+* {
+    background-color: transparent;
+    text-color:       @fg;
+    font:             @font-main;
+}
+
+window {
+    transparency:     "real";
+    location:         center;
+    anchor:           center;
+    width:            560px;
+    background-color: @bg-trans;
+    border:           1px;
+    border-color:     @border-col;
+    border-radius:    12px;
+}
+
+mainbox {
+    spacing:  0px;
+    children: [ inputbar, message, listview ];
+}
+
+inputbar {
+    padding:      14px 18px;
+    spacing:      0px;
+    border:       0px 0px 1px 0px;
+    border-color: @border-col;
+    children:     [ prompt, entry ];
+}
+
+prompt {
+    text-color:     @fg;
+    padding:        0px 10px 0px 0px;
+    vertical-align: 0.5;
+    font:           @font-bold;
+}
+
+entry {
+    placeholder:       "Search";
+    placeholder-color: @dim;
+    cursor:            text;
+    vertical-align:    0.5;
+    font:              @font-entry;
+}
+
+message {
+    padding:      10px 18px;
+    border:       0px 0px 1px 0px;
+    border-color: @border-col;
+}
+
+textbox {
+    text-color: @dim;
+    markup:     true;
+}
+
+listview {
+    lines:        10;
+    columns:      1;
+    fixed-height: false;
+    scrollbar:    false;
+    padding:      8px;
+    spacing:      2px;
+}
+
+element {
+    padding:       8px 10px;
+    spacing:       10px;
+    border-radius: 8px;
+}
+
+element normal.active,   element alternate.active { text-color: @accent; }
+element normal.urgent,   element alternate.urgent { text-color: @urgent; }
+element selected.normal { background-color: @select-bg; text-color: @select-fg; }
+element selected.active { background-color: @select-bg; text-color: @accent; }
+element selected.urgent { background-color: @select-bg; text-color: @urgent; }
+
+element-icon {
+    size:           1.3em;
+    vertical-align: 0.5;
+}
+
+element-text {
+    text-color:     inherit;
+    vertical-align: 0.5;
+}
+
+mode-switcher { enabled: false; }

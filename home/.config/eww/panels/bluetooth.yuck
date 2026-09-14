@@ -1,0 +1,32 @@
+;; Bluetooth: power, paired devices with battery, nearby devices to pair.
+(defwindow bluetooth
+  :monitor 0
+  :geometry (geometry :x "-10px" :y "47px" :width "380px" :anchor "top right")
+  :stacking "fg"
+  :wm-ignore true
+  :resizable false
+  (box :class "panel" :orientation "v" :space-evenly false
+    (head :title "Bluetooth"
+      (head-action :glyph "󰑓" :tip "Look for new devices" :active {bt?.discovering == true}
+                   :onclick "rice-bt scan"))
+
+    (switch-row :glyph "󰂯" :title "Bluetooth" :on {bt?.powered == true}
+                :onclick "rice-bt power toggle"
+                :sub {bt?.powered != true ? "off" : (bt?.connected > 0 ? "${bt.connected} connected" : "on")})
+
+    (box :orientation "v" :space-evenly false :visible {bt?.powered == true}
+      (section :text "My devices")
+      (box :orientation "v" :space-evenly false
+        (for d in {bt?.paired ?: []}
+          (row :glyph {d.glyph} :title {d.name} :sub {d.sub} :value {d.battery}
+               :active {d.connected} :onclick "rice-bt toggle ${d.mac}")))
+      (box :visible {arraylength(bt?.paired ?: []) == 0}
+        (empty :text "No paired devices"))
+
+      (section :text {bt?.discovering == true ? "Nearby · scanning" : "Nearby"})
+      (box :orientation "v" :space-evenly false
+        (for d in {bt?.nearby ?: []}
+          (row :glyph {d.glyph} :title {d.name} :sub {d.sub} :dim true
+               :onclick "rice-bt toggle ${d.mac}")))
+      (box :visible {arraylength(bt?.nearby ?: []) == 0}
+        (empty :text {bt?.discovering == true ? "Looking…" : "Press 󰑓 to look for devices"})))))

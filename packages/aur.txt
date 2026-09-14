@@ -1,0 +1,14 @@
+# Sakura Line - AUR packages (installed with paru or yay).
+# One package per line; text after # is ignored.
+
+eww                   # popups: calendar, control panels, notification centre
+xidlehook             # idle chain that skips fullscreen video and playing audio
+tdrop                 # drop-down scratchpad terminal
+boomer-git            # screen zoom
+rofi-greenclip        # clipboard history
+zscroll-git           # scrolling media title
+nerd-dictation-git    # offline voice dictation (vosk)
+bibata-cursor-theme
+cbonsai
+pipes.sh
+tty-clock

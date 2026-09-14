@@ -1,0 +1,39 @@
+;; Media: what is playing, a seek bar, and transport controls.
+(defpoll media_pos :interval "1s" :initial "{}" :run-while {open_panel == "media"} "rice-media position")
+
+(defwindow media
+  :monitor 0
+  :geometry (geometry :x "0" :y "47px" :width "380px" :anchor "top center")
+  :stacking "fg"
+  :wm-ignore true
+  :resizable false
+  (box :class "panel" :orientation "v" :space-evenly false
+    (head :title "Media"
+      (label :class "dim" :text {media?.player ?: ""}))
+
+    (box :orientation "v" :space-evenly false
+         :visible {media?.status != "Playing" && media?.status != "Paused"}
+      (empty :text "Nothing is playing"))
+
+    (box :orientation "v" :space-evenly false
+         :visible {media?.status == "Playing" || media?.status == "Paused"}
+      (box :class "row" :space-evenly false
+        (box :class "art" :visible {(media?.art ?: "") != ""}
+             :style "background-image: url('${media?.art ?: ''}');")
+        (box :orientation "v" :space-evenly false :valign "center" :hexpand true
+          (label :class "media-title" :xalign 0 :limit-width 26 :text {media?.title ?: ""})
+          (label :class "media-artist" :xalign 0 :limit-width 32 :text {media?.artist ?: ""})
+          (label :class "media-artist" :xalign 0 :limit-width 32 :visible {(media?.album ?: "") != ""}
+                 :text {media?.album ?: ""})))
+
+      (box :class "row slider-row" :space-evenly false :visible {(media?.length ?: 0) > 0}
+        (label :class "media-time" :width 36 :xalign 0 :text {media_pos?.text ?: "0:00"})
+        (scale :class "slider" :hexpand true :min 0 :max {media?.length ?: 1}
+               :value {media_pos?.pos ?: 0} :onchange "rice-media seek {}")
+        (label :class "media-time" :width 36 :xalign 1 :text {media?.lengthText ?: ""}))
+
+      (box :class "row" :space-evenly true
+        (button :class "media-btn" :tooltip "Previous" :onclick "playerctl previous" "󰒮")
+        (button :class "media-btn accent" :tooltip "Play / pause" :onclick "playerctl play-pause"
+          {media?.status == "Playing" ? "󰏤" : "󰐊"})
+        (button :class "media-btn" :tooltip "Next" :onclick "playerctl next" "󰒭")))))

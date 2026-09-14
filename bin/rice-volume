@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# rice-volume up|down|mute|mic-mute|set <percent> - volume with an on-screen display.
+set -uo pipefail
+
+sink=@DEFAULT_AUDIO_SINK@
+src=@DEFAULT_AUDIO_SOURCE@
+step=5
+
+# prints "<percent> <muted|on>"
+level() { wpctl get-volume "$1" | awk '{ printf "%d %s\n", $2 * 100 + 0.5, ($3 == "[MUTED]") ? "muted" : "on" }'; }
+
+case "${1:-}" in
+  up)       wpctl set-mute "$sink" 0; wpctl set-volume -l 1.0 "$sink" "${step}%+" ;;
+  down)     wpctl set-volume "$sink" "${step}%-" ;;
+  mute)     wpctl set-mute "$sink" toggle ;;
+  # set comes from the panel slider, which already shows the level: no OSD.
+  set)      wpctl set-volume -l 1.0 "$sink" "${2:?usage: rice-volume set <percent>}%"; exit 0 ;;
+  mic-mute)
+    wpctl set-mute "$src" toggle
+    read -r v s < <(level "$src")
+    if [[ $s == muted ]]; then rice-osd 󰍭 Microphone muted; else rice-osd 󰍬 Microphone "$v"; fi
+    exit 0
+    ;;
+  *) echo "usage: rice-volume up|down|mute|mic-mute|set <percent>" >&2; exit 2 ;;
+esac
+
+read -r v s < <(level "$sink")
+if [[ $s == muted ]]; then rice-osd 󰝟 Volume muted; else rice-osd 󰕾 Volume "$v"; fi

@@ -1,0 +1,31 @@
+;; Power: what the machine is doing, the power profile, and session actions.
+(defwindow power
+  :monitor 0
+  :geometry (geometry :x "-10px" :y "47px" :width "380px" :anchor "top right")
+  :stacking "fg"
+  :wm-ignore true
+  :resizable false
+  (box :class "panel" :orientation "v" :space-evenly false
+    (head :title "Power"
+      (head-action :glyph "󰍛" :tip "Activity monitor" :onclick "rice-panel close; setsid -f st -c rice-float -e btop"))
+
+    (row :glyph "󰍛" :title "CPU"
+         :value "${power?.cpu?.load ?: 0}%${power?.cpu?.temp != 'null' && power?.cpu?.temp != '' ? '   ' + power.cpu.temp + '°' : ''}")
+    (row :glyph "󰢮" :title "GPU" :sub {power?.gpu?.vram ?: ""}
+         :value "${power?.gpu?.load ?: 0}%${power?.gpu?.temp != 'null' && power?.gpu?.temp != '' ? '   ' + power.gpu.temp + '°' : ''}")
+    (row :glyph "󰘚" :title "Memory" :value "${power?.memory?.used ?: '-'} / ${power?.memory?.total ?: '-'}")
+    (row :glyph "󰔟" :title "Uptime" :value {power?.uptime ?: ""})
+
+    (box :orientation "v" :space-evenly false :visible {arraylength(power?.profiles ?: []) > 0}
+      (section :text "Power profile")
+      (box :class "row" :space-evenly true
+        (for p in {power?.profiles ?: []}
+          (button :class "pill ${p.active ? 'active' : ''}" :onclick "rice-power profile ${p.name}" {p.label}))))
+
+    (sep)
+    (box :space-evenly true :class "row"
+      (button :class "media-btn" :tooltip "Lock"      :onclick "rice-power lock"     "󰌾")
+      (button :class "media-btn" :tooltip "Suspend"   :onclick "rice-power suspend"  "󰒲")
+      (button :class "media-btn" :tooltip "Log out"   :onclick "rice-power logout"   "󰍃")
+      (button :class "media-btn" :tooltip "Reboot"    :onclick "rice-power reboot"   "󰜉")
+      (button :class "media-btn urgent" :tooltip "Shut down" :onclick "rice-power shutdown" "󰐥"))))

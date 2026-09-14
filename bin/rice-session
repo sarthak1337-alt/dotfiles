@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# rice-session - start everything the desktop needs, exactly once.
+#
+#   rice-session start     called by bspwmrc (safe to call again on bspwm restart)
+#   rice-session restart   stop and start the rice daemons
+#
+# Output goes to ~/.local/state/rice/session.log.
+set -u
+
+state="${XDG_STATE_HOME:-$HOME/.local/state}/rice"
+theme="$state/theme"
+mkdir -p "$state"
+exec >>"$state/session.log" 2>&1
+
+running() { pgrep -u "$UID" -x "$1" >/dev/null; }
+
+# start <process-name> <command...>: launch detached unless already running
+launch() {
+  local name="$1"; shift
+  if running "$name"; then return 0; fi
+  command -v "$1" >/dev/null || { echo "missing: $1"; return 0; }
+  setsid -f "$@" >/dev/null 2>&1 && echo "started $name"
+}
+
+daemons=(xsettingsd picom sxhkd dunst greenclip flameshot eww polybar xidlehook xss-lock)
+
+start() {
+  echo "== $(date -Is) session start"
+  systemctl --user import-environment DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP PATH QT_QPA_PLATFORMTHEME GTK_THEME
+  dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP
+
+  [[ -d $theme ]] || rice-theme render
+  [[ -f $theme/Xresources ]] && xrdb -merge "$theme/Xresources"
+
+  # Daemons left over from another setup keep their old config files, so a
+  # bspwm restart alone would never switch them. Replace those.
+  local pid args
+  for pid in $(pgrep -u "$UID" -x sxhkd); do
+    args=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+    if [[ $args == *" -c "* && $args != *panel-keys* ]]; then kill "$pid" && echo "replaced: $args"; fi
+  done
+  for pid in $(pgrep -u "$UID" -x picom); do
+    args=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+    if [[ $args != *"$HOME/.config/picom/picom.conf"* ]]; then kill "$pid" && echo "replaced: $args"; fi
+  done
+  for _ in {1..20}; do
+    pgrep -u "$UID" -f 'sxhkd -c .*bspwm|picom --config .*bspwm' >/dev/null || break
+    sleep 0.1
+  done
+  pgrep -u "$UID" -x dunst >/dev/null && dunstctl reload
+
+  launch xsettingsd xsettingsd -c "$theme/xsettingsd.conf"
+  launch picom      picom --config "$HOME/.config/picom/picom.conf"
+  launch sxhkd      sxhkd
+  launch dunst      dunst
+  launch greenclip  greenclip daemon
+  launch flameshot  flameshot
+  launch eww        eww daemon
+
+  if ! pgrep -u "$UID" -f polkit-gnome-authentication-agent-1 >/dev/null; then
+    setsid -f /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 >/dev/null 2>&1
+  fi
+
+  rice-wallpaper restore
+  rice-bar start
+  rice-idle start
+
+  (sleep 2 && rice-hook post-boot) &
+}
+
+stop() {
+  echo "== $(date -Is) session stop"
+  for d in "${daemons[@]}"; do pkill -u "$UID" -x "$d"; done
+}
+
+case "${1:-start}" in
+  start)   start ;;
+  stop)    stop ;;
+  restart) stop; sleep 0.5; start ;;
+  *) echo "usage: rice-session start|stop|restart" >&2; exit 2 ;;
+esac

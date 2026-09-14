@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# rice-lock - lock the screen with xsecurelock, in the rice's colours, with a
+# random xscreensaver hack behind the password prompt. Notifications are held
+# back while locked and shown once you unlock.
+set -uo pipefail
+
+pgrep -u "$UID" -x xsecurelock >/dev/null && exit 0
+
+theme="${XDG_STATE_HOME:-$HOME/.local/state}/rice/theme"
+[[ -f $theme/xsecurelock.env ]] && . "$theme/xsecurelock.env"
+
+# xsecurelock's screensaver picks a random hack from a folder. Give it one that
+# holds only the hacks from ~/.config/rice/screensavers (or rice's defaults).
+hacks="${XDG_RUNTIME_DIR:-/tmp}/rice/hacks"
+rm -rf "$hacks" && mkdir -p "$hacks"
+for h in $(rice-screensaver list); do ln -s "/usr/lib/xscreensaver/$h" "$hacks/$h"; done
+export XSECURELOCK_XSCREENSAVER_PATH="$hacks"
+
+rice-screensaver stop >/dev/null 2>&1
+rice-panel close >/dev/null 2>&1
+
+level=$(dunstctl get-pause-level 2>/dev/null || echo 0)
+dunstctl set-pause-level 100 >/dev/null 2>&1
+
+xsecurelock
+status=$?
+
+dunstctl set-pause-level "$level" >/dev/null 2>&1
+exit "$status"

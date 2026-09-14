@@ -1,0 +1,59 @@
+# Sakura Line - sampled from wallpapers/sakura-line.jpg.
+# Every surface (bspwm, polybar, rofi, dunst, eww, st, kitty, GTK, btop,
+# xsecurelock, starship) is rendered from these keys by `rice-theme`.
+# Colour values must be #rrggbb; templates add alpha where they need it.
+
+name = "Sakura Line"
+mode = "dark"
+wallpaper = "sakura-line.jpg"
+
+# --- surfaces, darkest to lightest ---
+bg        = "#0f0d17"
+bg_alt    = "#16121f"
+surface   = "#221c33"
+overlay   = "#2a2440"
+selection = "#2e2842"
+border    = "#3d3752"
+
+# --- text ---
+fg     = "#e9eefb"
+fg_alt = "#c9d1e2"
+dim    = "#7f7796"
+muted  = "#3a3350"
+
+# --- roles ---
+accent     = "#92b9ea"
+accent_alt = "#5d7fb0"
+urgent     = "#e0798f"
+
+# --- named colours (ANSI 1-6) and their bright twins (9-14) ---
+red     = "#cf6a80"
+green   = "#8fae74"
+yellow  = "#d8a87c"
+blue    = "#7c9ede"
+magenta = "#b483c0"
+cyan    = "#8ab6c4"
+
+bright_red     = "#e0798f"
+bright_green   = "#a8c68d"
+bright_yellow  = "#e9c79b"
+bright_blue    = "#92b9ea"
+bright_magenta = "#d0a4d8"
+bright_cyan    = "#a3c0cb"
+
+# --- translucency: bar, popups, menus, notifications and terminals all use it ---
+alpha     = "0.75"
+alpha_hex = "bf"
+
+# --- shape and type, shared by every popup, menu and toast ---
+font          = "JetBrainsMono Nerd Font"
+font_size     = "11"
+radius        = "12"
+radius_small  = "8"
+border_width  = "1"
+window_border = "2"
+gap           = "10"
+icon_theme    = "Papirus-Dark"
+gtk_theme     = "Adwaita-dark"
+cursor_theme  = "Bibata-Modern-Classic"
+cursor_size   = "20"

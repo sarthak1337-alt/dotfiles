@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Sakura Line - bspwm.
+# Colours, border width and gaps come from the theme (rice-theme); everything
+# that runs for the session is started by rice-session. Machine-specific extras
+# (autostarted apps, per-app desktops) go in ~/.config/rice/local.sh, which is
+# not part of the repo.
+
+export PATH="$HOME/.local/bin:$PATH"
+export XDG_CURRENT_DESKTOP=bspwm
+export QT_QPA_PLATFORMTHEME=qt6ct
+export GTK_THEME=Adwaita:dark
+[[ -f $HOME/.env ]] && . "$HOME/.env"
+
+theme="${XDG_STATE_HOME:-$HOME/.local/state}/rice/theme"
+
+# ---------------------------------------------------------------- monitors
+primary=$(xrandr --query | awk '/ connected primary/ {print $1; exit}')
+[[ -z $primary ]] && primary=$(bspc query -M --names | head -n1)
+bspc monitor "$primary" -d 1 2 3 4 5 6
+
+# Run the primary output at its highest mode and refresh rate.
+mode=$(xrandr --query | awk -v m="$primary" '$1 == m {getline; print $1; exit}')
+rate=$(xrandr --query | awk -v m="$primary" '$1 == m {getline; for (i = 2; i <= NF; i++) { r = $i; gsub(/[*+]/, "", r); if (r + 0 > best + 0) best = r }; print best; exit}')
+[[ -n $mode && -n $rate ]] && xrandr --output "$primary" --mode "$mode" --rate "$rate"
+
+# ------------------------------------------------------------------ layout
+bspc config focus_follows_pointer true
+bspc config borderless_monocle    true
+bspc config gapless_monocle       false
+bspc config split_ratio           0.52
+bspc config automatic_scheme      longest_side
+bspc config initial_polarity      second_child
+bspc config pointer_modifier      mod4
+bspc config pointer_action1       move
+bspc config pointer_action2       resize_side
+bspc config pointer_action3       resize_corner
+
+# colours, border width, gaps
+[[ -f $theme/bspwm-colors.sh ]] && . "$theme/bspwm-colors.sh"
+
+# ------------------------------------------------------------------- rules
+# Restarting bspwm re-runs this file, so start from a clean rule list.
+bspc rule -r '*'
+
+for app in feh imv mpv vlc Yad Zenity Xarchiver ark Blueman-manager; do
+  bspc rule -a "$app" state=floating center=on
+done
+bspc rule -a Pavucontrol       state=floating center=on rectangle=920x450+0+0
+bspc rule -a qt5ct             state=floating center=on rectangle=900x600+0+0
+bspc rule -a qt6ct             state=floating center=on rectangle=900x600+0+0
+bspc rule -a Gnome-calculator  state=floating center=on rectangle=360x500+0+0
+bspc rule -a loupe             state=floating center=on rectangle=1200x800+0+0
+bspc rule -a '*:sun-awt-X11-XWindowPeer' manage=off
+
+# rice surfaces
+bspc rule -a rice-float        state=floating center=on rectangle=900x560+0+0
+bspc rule -a rice-about        state=floating center=on rectangle=760x440+0+0
+bspc rule -a rice-scratchpad   state=floating sticky=on layer=above
+bspc rule -a '*:rice-webcam'   state=floating sticky=on layer=above border=off focus=off
+bspc rule -a boomer            state=fullscreen
+
+# ------------------------------------------------------------------ session
+xsetroot -cursor_name left_ptr
+wmname LG3D
+
+[[ -f $HOME/.config/rice/local.sh ]] && . "$HOME/.config/rice/local.sh"
+
+rice-session start &

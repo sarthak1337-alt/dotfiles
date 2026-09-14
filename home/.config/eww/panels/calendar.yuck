@@ -1,0 +1,47 @@
+;; Calendar: month grid with ISO weeks, the selected day's events and reminders.
+(defwindow calendar
+  :monitor 0
+  :geometry (geometry :x "0" :y "47px" :width "360px" :anchor "top center")
+  :stacking "fg"
+  :wm-ignore true
+  :resizable false
+  (box :class "panel" :orientation "v" :space-evenly false
+    (head :title {month?.title ?: "Calendar"}
+      (head-action :glyph "󰅁" :tip "Previous month" :onclick "rice-cal shift -1")
+      (head-action :glyph "󰃭" :tip "Today" :onclick "rice-cal today")
+      (head-action :glyph "󰅂" :tip "Next month" :onclick "rice-cal shift 1"))
+
+    (box :class "cal-grid" :orientation "v" :space-evenly false
+      (box :space-evenly false
+        (label :class "cal-wk" :text "Wk")
+        (for d in {month?.dow ?: []}
+          (label :class "cal-dow" :hexpand true :text d)))
+      (for w in {month?.weeks ?: []}
+        (box :space-evenly false
+          (label :class "cal-wk" :text {w.wk})
+          (for d in {w.days}
+            (button :hexpand true :onclick "rice-cal select ${d.date}"
+                    :class "cal-day ${d.other ? 'other' : ''} ${d.weekend ? 'weekend' : ''} ${d.selected ? 'selected' : ''} ${d.today ? 'today' : ''}"
+              (box :orientation "v" :space-evenly false :valign "center"
+                (label :text {d.d})
+                (label :class "cal-dot" :text {d.events > 0 ? "●" : " "})))))))
+
+    (sep)
+    (box :space-evenly false
+      (label :class "section" :hexpand true :xalign 0 :text {agenda?.heading ?: "Today"})
+      (head-action :glyph "󰃅" :tip "Add event" :onclick "rice-cal add")
+      (head-action :glyph "󰀠" :tip "Add reminder" :onclick "rice-panel close; rice-reminder new"))
+
+    (box :orientation "v" :space-evenly false
+      (for ev in {agenda?.items ?: []}
+        (box :class "row" :space-evenly false
+          (box :class "event-bar ${ev.kind == 'reminder' ? 'reminder' : ''}")
+          (label :class "event-time" :xalign 0 :text {ev.time})
+          (box :orientation "v" :hexpand true :space-evenly false :valign "center"
+            (label :class "row-title" :xalign 0 :limit-width 28 :text {ev.title})
+            (label :class "row-sub" :xalign 0 :limit-width 36 :visible {ev.sub != ""} :text {ev.sub}))
+          (button :class "notif-close" :valign "center" :visible {ev.kind == "reminder"}
+                  :tooltip "Cancel reminder" :onclick "rice-reminder cancel ${ev.id}" "󰅖"))))
+
+    (box :orientation "v" :space-evenly false :visible {arraylength(agenda?.items ?: []) == 0}
+      (empty :text {(agenda?.status ?: "") != "" ? agenda.status : "Nothing planned"}))))

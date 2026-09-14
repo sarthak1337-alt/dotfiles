@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# rice-capture - screenshots, recordings, OCR, QR codes, colours, webcam, transcoding.
+#
+#   rice-capture region      flameshot as usual: drag, annotate, Ctrl+C copies, Ctrl+S saves
+#   rice-capture screen      the whole screen, saved and copied
+#   rice-capture text        copy the text inside a region (OCR)
+#   rice-capture qr          copy what a QR code inside a region says
+#   rice-capture color       copy the colour under the cursor
+#   rice-capture record      start a recording (asks what to record), or stop the running one
+#   rice-capture webcam      webcam overlay on/off, for recordings
+#   rice-capture transcode   shrink a recent picture or video for sharing
+#
+# Full-screen shots land in Pictures/Screenshots, recordings in Videos/Recordings.
+# Recordings and transcodes end with a notification: click it to open the file.
+set -uo pipefail
+
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+mkdir -p "$run"
+pics="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")"; pics="${pics%/}"
+vids="$(xdg-user-dir VIDEOS 2>/dev/null || echo "$HOME/Videos")"; vids="${vids%/}"
+shots="$pics/Screenshots"
+recordings="$vids/Recordings"
+
+stamp() { date +%Y-%m-%d_%H-%M-%S; }
+menu()  { rofi -dmenu -i -no-custom -format i -theme "$HOME/.config/rofi/menu.rasi" -p "$1"; }
+
+# The selection rectangle uses the theme's accent.
+slop_opts() {
+  local hex; hex=$(rice-theme get accent); hex=${hex#\#}
+  awk -v r=$((16#${hex:0:2})) -v g=$((16#${hex:2:2})) -v b=$((16#${hex:4:2})) \
+    'BEGIN { printf "-b 2 -l -c %.2f,%.2f,%.2f,0.18", r / 255, g / 255, b / 255 }'
+}
+
+# Select a region into a temp PNG; prints its path, or nothing if cancelled.
+grab_region() {
+  local img; img=$(mktemp --suffix .png -p "$run")
+  # shellcheck disable=SC2046
+  maim -s -u $(slop_opts) "$img" 2>/dev/null
+  if [[ -s $img ]]; then echo "$img"; else rm -f "$img"; fi
+}
+
+# announce <file> <title> [icon] - notification whose click opens the file.
+announce() {
+  local file="$1" title="$2" icon="${3:-$1}"
+  (
+    action=$(notify-send -a rice -i "$icon" -A default=Open -A folder="Show in folder" -A delete=Delete \
+      "$title" "$(basename "$file") · copied")
+    case "$action" in
+      default) xdg-open "$file" ;;
+      folder)  thunar "$(dirname "$file")" ;;
+      delete)  rm -f -- "$file" && notify-send -a rice -u low "Deleted" "$(basename "$file")" ;;
+    esac
+  ) >/dev/null 2>&1 &
+}
+
+# Screenshots reach the clipboard through flameshot, never xclip: flameshot (Qt)
+# answers paste requests properly, while pasting a PNG held by xclip crashed
+# Brave and st. Any flag on `flameshot gui` (--raw, --path, --clipboard) also
+# swaps its Copy/Save/Pin buttons and Ctrl+C for a single accept button.
+region() {
+  flameshot gui
+}
+
+screen() {
+  mkdir -p "$shots"
+  flameshot full --clipboard --path "$shots/screenshot-$(stamp).png"
+}
+
+text() {
+  command -v tesseract >/dev/null || { rice-notify send "Text capture" "Install tesseract to read text"; exit 1; }
+  local img out
+  img=$(grab_region); [[ -n $img ]] || exit 0
+  out=$(tesseract "$img" stdout -l "${RICE_OCR_LANGS:-eng}" --psm 6 2>/dev/null | sed -e 's/[[:space:]]*$//' -e '/./,$!d')
+  rm -f "$img"
+  [[ -n $out ]] || { rice-notify send "Text capture" "No text found in that region"; exit 1; }
+  printf '%s' "$out" | xclip -selection clipboard
+  rice-notify send "Text copied" "$(head -c 160 <<<"$out")"
+}
+
+qr() {
+  local img out
+  img=$(grab_region); [[ -n $img ]] || exit 0
+  out=$(zbarimg -q --raw -Sdisable -Sqrcode.enable "$img" 2>/dev/null)
+  rm -f "$img"
+  [[ -n $out ]] || { rice-notify send "QR code" "No QR code in that region"; exit 1; }
+  printf '%s' "$out" | xclip -selection clipboard
+  rice-notify send "QR code copied" "It is on the clipboard (and in clipboard history)"
+}
+
+color() {
+  local hex swatch="$run/swatch.png"
+  hex=$(xcolor --format hex 2>/dev/null) || exit 0
+  [[ $hex =~ ^#[0-9a-fA-F]{6}$ ]] || exit 0
+  printf '%s' "$hex" | xclip -selection clipboard
+  magick -size 64x64 "xc:$hex" "$swatch" 2>/dev/null
+  notify-send -a rice -u low -i "$swatch" "Colour copied" "$hex"
+}
+
+record() {
+  if pgrep -x gpu-screen-reco >/dev/null; then
+    local file thumb="$run/recording.jpg"
+    file=$(cat "$run/recording.path" 2>/dev/null)
+    pkill -INT -x gpu-screen-reco
+    for _ in {1..80}; do pgrep -x gpu-screen-reco >/dev/null || break; sleep 0.1; done
+    rm -f "$run/recording"
+    if [[ -s $file ]]; then
+      ffmpeg -y -loglevel error -ss 1 -i "$file" -frames:v 1 -vf scale=320:-1 "$thumb" 2>/dev/null
+      printf 'file://%s\n' "$file" | xclip -selection clipboard -t text/uri-list
+      announce "$file" "Recording saved" "$thumb"
+    fi
+    return
+  fi
+
+  local audio target file args
+  audio=$(printf '%s\n' "󰝟  No audio" "󰕾  Desktop audio" "󰍬  Desktop audio and microphone" | menu "Record") || exit 0
+  target=$(printf '%s\n' "󰍹  Whole screen" "󰩭  A region (drag it)" "󰖯  One window (click it)" | menu "Record") || exit 0
+  mkdir -p "$recordings"
+  file="$recordings/recording-$(stamp).mp4"
+  args=(-f 60 -c mp4 -o "$file")
+  case "$audio" in
+    1) args+=(-a default_output) ;;
+    2) args+=(-a "default_output|default_input") ;;
+  esac
+  case "$target" in
+    0)
+      # gpu-screen-recorder 6 records a monitor by name: pick the one under the pointer.
+      local X Y mon
+      eval "$(xdotool getmouselocation --shell 2>/dev/null)"
+      mon=$(xrandr --query | awk -v x="${X:-0}" -v y="${Y:-0}" '
+        / connected/ { for (i = 3; i <= NF; i++) if ($i ~ /^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/) {
+          split($i, g, /[x+]/)
+          if (x >= g[3] && x < g[3] + g[1] && y >= g[4] && y < g[4] + g[2]) { print $1; exit }
+        } }')
+      [[ -n $mon ]] || mon=$(gpu-screen-recorder --list-monitors 2>/dev/null | head -n1 | cut -d'|' -f1)
+      [[ -n $mon ]] || { rice-notify send "Recording" "Found no monitor to record"; exit 1; }
+      args+=(-w "$mon")
+      ;;
+    1)
+      local geo
+      # shellcheck disable=SC2046
+      geo=$(slop $(slop_opts) -f '%wx%h+%x+%y' 2>/dev/null) || exit 0
+      args+=(-w region -region "$geo")
+      ;;
+    2)
+      local wid
+      wid=$(xdotool selectwindow 2>/dev/null) || exit 0
+      args+=(-w "$wid")
+      ;;
+  esac
+  echo "$file" > "$run/recording.path"
+  touch "$run/recording"
+  setsid -f gpu-screen-recorder "${args[@]}" > "$run/recording.log" 2>&1
+  notify-send -a rice -u low -t 1500 "Recording" "Stop with alt + PrtSc or the REC indicator"
+}
+
+webcam() {
+  local pid dev
+  if [[ -f $run/webcam.pid ]] && pid=$(cat "$run/webcam.pid") && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid"; rm -f "$run/webcam.pid"; return
+  fi
+  dev=$(ls /dev/video* 2>/dev/null | head -n1)
+  [[ -n $dev ]] || { rice-notify send "Webcam" "No camera found"; exit 1; }
+  mpv --x11-name=rice-webcam --title=rice-webcam --profile=low-latency --untimed --no-osc --no-audio \
+      --no-input-default-bindings --input-conf=/dev/null --no-border --ontop \
+      --geometry=260x260-24-24 --vf=crop=ih:ih "av://v4l2:$dev" >/dev/null 2>&1 &
+  echo $! > "$run/webcam.pid"
+}
+
+transcode() {
+  local files choice file fmt out base
+  mapfile -t files < <(find "$pics" "$vids" -maxdepth 2 -type f \
+      \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' -o -iname '*.heic' \
+         -o -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' \) \
+      -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -n 40 | cut -f2-)
+  (( ${#files[@]} > 0 )) || { rice-notify send "Transcode" "No pictures or videos in Pictures or Videos"; exit 1; }
+  choice=$(for f in "${files[@]}"; do basename "$f"; done | menu "Transcode") || exit 0
+  file="${files[$choice]}"
+  base="${file%.*}"
+
+  case "$(file -b --mime-type "$file")" in
+    image/*)
+      fmt=$(printf '%s\n' "jpg  ·  2160px wide" "jpg  ·  1080px wide" "png  ·  1080px wide" | menu "Picture") || exit 0
+      case "$fmt" in
+        0) out="$base-2160px.jpg"; magick "$file" -resize '2160x>' -quality 85 -strip "$out" ;;
+        1) out="$base-1080px.jpg"; magick "$file" -resize '1080x>' -quality 85 -strip "$out" ;;
+        2) out="$base-1080px.png"; magick "$file" -resize '1080x>' -strip "$out" ;;
+      esac
+      ;;
+    video/*)
+      fmt=$(printf '%s\n' "mp4  ·  1080p" "mp4  ·  720p" "gif  ·  720p" | menu "Video") || exit 0
+      rice-notify send "Transcoding" "$(basename "$file")"
+      case "$fmt" in
+        0) out="$base-1080p.mp4"; ffmpeg -y -loglevel error -i "$file" -vf "scale=-2:'min(1080,ih)'" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -movflags +faststart "$out" ;;
+        1) out="$base-720p.mp4";  ffmpeg -y -loglevel error -i "$file" -vf "scale=-2:'min(720,ih)'" -c:v libx264 -crf 24 -preset medium -c:a aac -b:a 128k -movflags +faststart "$out" ;;
+        2) out="$base-720p.gif";  ffmpeg -y -loglevel error -i "$file" -vf "fps=15,scale=-2:'min(720,ih)':flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" "$out" ;;
+      esac
+      ;;
+    *) rice-notify send "Transcode" "That is not a picture or a video"; exit 1 ;;
+  esac
+
+  if [[ -s ${out:-} ]]; then
+    printf 'file://%s\n' "$out" | xclip -selection clipboard -t text/uri-list
+    announce "$out" "Transcoded"
+  else
+    rice-notify send "Transcode" "Conversion failed"
+  fi
+}
+
+case "${1:-}" in
+  region|screen|text|qr|color|record|webcam|transcode) "$1" ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

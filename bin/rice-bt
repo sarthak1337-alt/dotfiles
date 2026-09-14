@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# rice-bt - bluetooth state for the eww panel, and the actions it runs.
+#
+#   rice-bt list               JSON: power, discovery, paired and nearby devices
+#   rice-bt power on|off|toggle
+#   rice-bt scan               look for new devices for 15 seconds
+#   rice-bt toggle <MAC>       connect or disconnect; new devices are paired and trusted first
+#   rice-bt forget <MAC>
+#
+# Device names are chosen by the device, so the panel only ever passes MAC
+# addresses, and every MAC is checked before it is used.
+set -uo pipefail
+
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+mkdir -p "$run"
+
+say()  { rice-notify send "$1" "${2:-}" -i bluetooth; }
+poke() { date +%s%N > "$run/bt.rev"; }
+mac_ok() { [[ ${1:-} =~ ^([0-9A-F]{2}:){5}[0-9A-F]{2}$ ]] || { echo "rice-bt: not a MAC address: '${1:-}'" >&2; exit 2; }; }
+powered() { bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; }
+
+glyph() {
+  case "$1" in
+    audio-headset|audio-headphones) echo 󰋋 ;;
+    audio-card)                     echo 󰓃 ;;
+    input-keyboard)                 echo 󰌌 ;;
+    input-mouse)                    echo 󰍽 ;;
+    input-gaming)                   echo 󰊴 ;;
+    phone)                          echo 󰏲 ;;
+    computer)                       echo 󰍹 ;;
+    *)                              echo 󰂯 ;;
+  esac
+}
+
+device_json() {
+  local mac="$1" info name icon paired connected battery
+  info=$(bluetoothctl info "$mac" 2>/dev/null)
+  name=$(sed -n 's/^\s*Alias: //p' <<<"$info" | head -n1)
+  icon=$(sed -n 's/^\s*Icon: //p' <<<"$info" | head -n1)
+  paired=$(grep -q 'Paired: yes' <<<"$info" && echo true || echo false)
+  connected=$(grep -q 'Connected: yes' <<<"$info" && echo true || echo false)
+  battery=$(sed -n 's/^\s*Battery Percentage: .*(\([0-9]*\))/\1/p' <<<"$info" | head -n1)
+  jq -cn --arg mac "$mac" --arg name "${name:-$mac}" --arg glyph "$(glyph "$icon")" \
+    --argjson paired "$paired" --argjson connected "$connected" --arg battery "$battery" \
+    '{mac: $mac, name: $name, glyph: $glyph, paired: $paired, connected: $connected,
+      battery: (if $battery == "" then "" else $battery + "%" end),
+      sub: (if $connected then "connected" elif $paired then "paired" else "tap to pair" end)}'
+}
+
+list() {
+  local on=false discovering=false paired="[]" nearby="[]" mac
+  if powered; then
+    on=true
+    bluetoothctl show 2>/dev/null | grep -q 'Discovering: yes' && discovering=true
+    paired=$(bluetoothctl devices Paired 2>/dev/null | awk '{ print $2 }' | grep -E '^([0-9A-F]{2}:){5}[0-9A-F]{2}$' |
+      while read -r mac; do device_json "$mac"; done | jq -cs 'sort_by(.connected | not)')
+    nearby=$(comm -23 <(bluetoothctl devices 2>/dev/null | awk '{ print $2 }' | sort) \
+                      <(bluetoothctl devices Paired 2>/dev/null | awk '{ print $2 }' | sort) |
+      grep -E '^([0-9A-F]{2}:){5}[0-9A-F]{2}$' | head -n 8 |
+      while read -r mac; do device_json "$mac"; done | jq -cs '[.[] | select(.name != .mac)]')
+  fi
+  jq -cn --argjson powered "$on" --argjson discovering "$discovering" \
+    --argjson paired "$paired" --argjson nearby "$nearby" \
+    '{powered: $powered, discovering: $discovering, paired: $paired, nearby: $nearby,
+      connected: ([$paired[] | select(.connected)] | length)}'
+}
+
+case "${1:-}" in
+  list) list ;;
+  power)
+    case "${2:-toggle}" in
+      on)  rfkill unblock bluetooth 2>/dev/null; bluetoothctl power on >/dev/null ;;
+      off) bluetoothctl power off >/dev/null ;;
+      *)   if powered; then bluetoothctl power off >/dev/null; else rfkill unblock bluetooth 2>/dev/null; bluetoothctl power on >/dev/null; fi ;;
+    esac
+    poke ;;
+  scan)
+    powered || bluetoothctl power on >/dev/null
+    setsid -f bluetoothctl --timeout 15 scan on >/dev/null 2>&1
+    poke ;;
+  toggle)
+    mac_ok "${2:-}"; mac="$2"
+    info=$(bluetoothctl info "$mac" 2>/dev/null)
+    name=$(sed -n 's/^\s*Alias: //p' <<<"$info" | head -n1)
+    if grep -q 'Connected: yes' <<<"$info"; then
+      bluetoothctl disconnect "$mac" >/dev/null && say "Disconnected" "$name"
+    else
+      if ! grep -q 'Paired: yes' <<<"$info"; then
+        bluetoothctl --timeout 20 pair "$mac" >/dev/null 2>&1 || { say "Pairing failed" "$name"; exit 1; }
+        bluetoothctl trust "$mac" >/dev/null
+      fi
+      bluetoothctl --timeout 15 connect "$mac" >/dev/null 2>&1 && say "Connected" "$name" || say "Could not connect" "$name"
+    fi
+    poke ;;
+  forget)
+    mac_ok "${2:-}"
+    bluetoothctl remove "$2" >/dev/null && say "Forgot device" "$2"
+    poke ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

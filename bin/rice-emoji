@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# rice-emoji - emoji picker that types the emoji into the focused window.
+theme="$HOME/.config/rofi/menu.rasi"
+if [[ -f /usr/lib/rofi/emoji.so ]]; then
+  # The "Emoji" header comes from config.rasi (emoji { display-name }).
+  exec rofi -modi emoji -show emoji -emoji-mode insert \
+    -theme "$theme" -theme-str 'window { width: 640px; } listview { columns: 2; lines: 12; }'
+elif command -v rofimoji >/dev/null; then
+  exec rofimoji --action type --selector-args="-theme $theme -p Emoji"
+else
+  rice-notify send "Emoji" "Install rofi-emoji to use the picker"
+fi

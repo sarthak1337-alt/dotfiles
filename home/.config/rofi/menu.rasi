@@ -1,0 +1,7 @@
+/* Text menus: system menu, power, keybindings, clipboard, toggles.
+   Entries carry their own Nerd Font glyph, so rofi's icon column is off. */
+@import "~/.config/rofi/rice.rasi"
+
+window       { width: 520px; }
+listview     { lines: 12; }
+element-icon { enabled: false; }

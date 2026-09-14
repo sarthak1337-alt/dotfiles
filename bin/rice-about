@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# rice-about - system details (fastfetch) in a floating terminal. Any key closes it.
+exec st -c rice-about -e bash -c 'clear; fastfetch; printf "\n  \e[2mpress any key\e[0m"; read -rsn1'

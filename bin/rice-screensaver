@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# rice-screensaver - classic xscreensaver hacks, full screen.
+#
+#   rice-screensaver start [hack]   random hack from the list (rice-idle runs this)
+#   rice-screensaver stop
+#   rice-screensaver now [hack]     start by hand; press q or Escape in it to stop
+#   rice-screensaver list           hacks available on this machine
+#
+# Pick your own set by listing hack names, one per line, in
+# ~/.config/rice/screensavers.
+set -uo pipefail
+
+hackdir=/usr/lib/xscreensaver
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+pidfile="$run/screensaver.pid"
+mkdir -p "$run"
+
+defaults="glmatrix flurry pipes fireworkx galaxy atlantis lament gears starfish xmatrix boxfit"
+user_list="${XDG_CONFIG_HOME:-$HOME/.config}/rice/screensavers"
+
+available() {
+  local names h
+  if [[ -f $user_list ]]; then names=$(grep -v '^\s*#' "$user_list"); else names=$defaults; fi
+  for h in $names; do [[ -x $hackdir/$h ]] && echo "$h"; done
+}
+
+stop() {
+  [[ -f $pidfile ]] && kill "$(cat "$pidfile")" 2>/dev/null
+  rm -f "$pidfile"
+}
+
+start() {
+  local hack="${1:-}" pid wid
+  stop
+  if [[ -z $hack ]]; then hack=$(available | shuf -n1); fi
+  [[ -n $hack && -x $hackdir/$hack ]] || { echo "rice-screensaver: no hack available (install xscreensaver)" >&2; exit 1; }
+  [[ $hack =~ ^[a-z0-9_-]+$ ]] || exit 2
+
+  "$hackdir/$hack" >/dev/null 2>&1 &
+  pid=$!
+  echo "$pid" > "$pidfile"
+  # Hacks open an ordinary window; hand it to bspwm as a fullscreen node.
+  wid=$(xdotool search --sync --onlyvisible --pid "$pid" 2>/dev/null | head -n1)
+  [[ -n $wid ]] && bspc node "$wid" -t fullscreen -f 2>/dev/null
+}
+
+case "${1:-}" in
+  start) start "${2:-}" ;;
+  now)   start "${2:-}" ;;
+  stop)  stop ;;
+  list)  available ;;
+  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

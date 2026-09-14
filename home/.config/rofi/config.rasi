@@ -1,0 +1,22 @@
+/* Sakura Line - rofi defaults. Scripts pick a layout with -theme. */
+configuration {
+    modes:               "drun,run,window";
+    show-icons:          true;
+    icon-theme:          "Papirus-Dark";
+    drun-display-format: "{name}";
+    matching:            "fuzzy";
+    sort:                true;
+    sorting-method:      "fzf";
+    hover-select:        true;
+    me-select-entry:     "MousePrimary";
+    me-accept-entry:     "!MousePrimary";
+    kb-cancel:           "Escape,Control+g,Control+bracketleft";
+
+    /* Header titles, one per mode (rofi 2 ignores -display-<mode> for some modes). */
+    drun   { display-name: "Apps"; }
+    run    { display-name: "Run"; }
+    window { display-name: "Windows"; }
+    emoji  { display-name: "Emoji"; }
+}
+
+@theme "~/.config/rofi/launcher.rasi"

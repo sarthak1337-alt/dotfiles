@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# rice-panel <name> | close | list
+#
+# Opens one eww popup at a time (opening one closes the other). A transparent
+# full-screen "closer" window sits underneath, so a click anywhere else closes
+# it, and a throwaway sxhkd grabs Escape for as long as a panel is open.
+set -uo pipefail
+
+cfg="$HOME/.config/eww"
+panels="hub audio network bluetooth display power media calendar notifications"
+
+e() { eww -c "$cfg" "$@"; }
+
+ensure_daemon() {
+  pgrep -u "$UID" -x eww >/dev/null && return 0
+  setsid -f eww -c "$cfg" daemon >/dev/null 2>&1
+  for _ in {1..50}; do e ping >/dev/null 2>&1 && return 0; sleep 0.1; done
+}
+
+open_windows() { e active-windows 2>/dev/null | cut -d: -f1; }
+
+# Line panels up with tiled windows. bspwm draws the border inside the gap, so a
+# window's outer edge is exactly one gap below the bar and in from the screen's
+# right edge; ask it for the live numbers instead of hard-coding them.
+position() {
+  local pt pr gap
+  read -r pt pr gap < <(bspc query -T -m 2>/dev/null |
+    jq -r '[.padding.top, .padding.right, .windowGap] | @tsv' 2>/dev/null)
+  pt=${pt:-37} pr=${pr:-0} gap=${gap:-10}
+  case "$1" in
+    media|calendar) echo "0x$(( pt + gap ))" ;;
+    *)              echo "$(( -(pr + gap) ))x$(( pt + gap ))" ;;
+  esac
+}
+
+close_all() {
+  local w
+  for w in $(open_windows); do
+    [[ " $panels closer " == *" $w "* ]] && e close "$w" >/dev/null 2>&1
+  done
+  pkill -u "$UID" -f "sxhkd -c $cfg/panel-keys" 2>/dev/null
+  pgrep -u "$UID" -x eww >/dev/null && e update open_panel="" >/dev/null 2>&1
+  return 0
+}
+
+case "${1:-close}" in
+  close) close_all ;;
+  list)  tr ' ' '\n' <<<"$panels" ;;
+  *)
+    name="$1"
+    [[ " $panels " == *" $name "* ]] || { echo "rice-panel: unknown panel '$name' (try: rice-panel list)" >&2; exit 2; }
+    ensure_daemon
+    if open_windows | grep -qx "$name"; then
+      close_all
+    else
+      close_all
+      [[ $name == calendar ]] && e update cal_offset=0 cal_day=""
+      e update open_panel="$name"
+      e open closer
+      e open "$name" --pos="$(position "$name")"
+      setsid -f sxhkd -c "$cfg/panel-keys" >/dev/null 2>&1
+    fi
+    ;;
+esac

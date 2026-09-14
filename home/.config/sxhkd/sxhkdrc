@@ -1,0 +1,244 @@
+# Sakura Line - keybindings.
+# `rice-keys` builds the cheat sheet (super + k) from this file:
+# a "## Section" line starts a group, a "# text" line right above a
+# hotkey is its description. Keep that shape when adding bindings.
+
+## Apps
+
+# Terminal
+super + Return
+	st
+
+# Drop-down terminal (scratchpad)
+super + grave
+	rice-scratchpad
+
+# App launcher
+super + w
+	rofi -show drun
+
+# Rice menu
+super + m
+	rice-menu main
+
+# Keybinding cheat sheet
+super + k
+	rice-keys
+
+# Emoji picker
+super + ctrl + e
+	rice-emoji
+
+# Clipboard history
+super + ctrl + v
+	rice-clipboard
+
+## Panels
+
+# Control centre
+super + a
+	rice-panel hub
+
+# Audio / network / bluetooth / display / power / media panel
+super + ctrl + {a,w,b,d,p,m}
+	rice-panel {audio,network,bluetooth,display,power,media}
+
+# Calendar and reminders
+super + ctrl + c
+	rice-panel calendar
+
+# Notification centre
+super + n
+	rice-panel notifications
+
+# Toggle the bar
+super + b
+	rice-bar toggle
+
+## Notifications
+
+# Dismiss the newest notification
+super + comma
+	rice-notify dismiss
+
+# Dismiss all notifications
+super + shift + comma
+	rice-notify dismiss-all
+
+# Do not disturb on/off
+super + ctrl + comma
+	rice-notify dnd toggle
+
+# Run the newest notification's action
+super + alt + comma
+	rice-notify action
+
+# Bring back the last dismissed notification
+super + shift + alt + comma
+	rice-notify restore
+
+## Reminders
+
+# New reminder
+super + ctrl + r
+	rice-reminder new
+
+# Show upcoming reminders
+super + ctrl + alt + r
+	rice-reminder list
+
+## Capture
+
+# Screenshot a region (flameshot)
+Print
+	rice-capture region
+
+# Screenshot the whole screen
+shift + Print
+	rice-capture screen
+
+# Copy text from a region (OCR)
+ctrl + Print
+	rice-capture text
+
+# Start or stop screen recording
+alt + Print
+	rice-capture record
+
+# Pick a colour
+super + shift + Print
+	rice-capture color
+
+# Capture menu: QR, webcam overlay, transcode and the rest
+super + Print
+	rice-menu capture
+
+# Screenshot a region (no PrtSc key)
+super + alt + p
+	rice-capture region
+
+# Screenshot the whole screen (no PrtSc key)
+super + alt + shift + p
+	rice-capture screen
+
+# Copy text from a region (no PrtSc key)
+super + alt + t
+	rice-capture text
+
+# Start or stop screen recording (no PrtSc key)
+super + alt + v
+	rice-capture record
+
+# Pick a colour (no PrtSc key)
+super + alt + c
+	rice-capture color
+
+# Capture menu (no PrtSc key)
+super + alt + s
+	rice-menu capture
+
+# Zoom into the screen
+super + ctrl + z
+	rice-zoom
+
+# Dictation on/off
+super + ctrl + x
+	rice-dictate toggle
+
+## Clipboard
+
+# Copy (works in terminals too)
+super + @c
+	rice-clip copy
+
+# Paste (works in terminals too)
+super + @v
+	rice-clip paste
+
+## Style
+
+# Wallpaper picker
+super + ctrl + space
+	rice-menu wallpaper
+
+# Theme picker
+super + shift + ctrl + space
+	rice-menu theme
+
+# Quick toggles
+super + ctrl + o
+	rice-menu toggles
+
+## Session
+
+# Power menu
+super + Escape
+	rice-menu power
+
+# Lock
+super + ctrl + l
+	rice-lock
+
+# Stay awake on/off
+super + ctrl + i
+	rice-idle toggle
+
+# Reload keybindings
+super + alt + Escape
+	pkill -USR1 -x sxhkd && rice-notify send "Keybindings" "Reloaded"
+
+# Restart bspwm
+super + alt + r
+	bspc wm -r
+
+# Quit bspwm
+super + Delete
+	bspc quit
+
+## Windows
+
+# Close window
+super + q
+	bspc node -c
+
+# Float / tile
+super + space
+	bspc node -t "~"{floating,tiled}
+
+# Fullscreen
+super + f
+	bspc node -t \~fullscreen
+
+# Focus / swap window in a direction
+super + {_,shift + }{Left,Down,Up,Right}
+	bspc node -{f,s} {west,south,north,east}
+
+# Previous window
+alt + Tab
+	bspc node -f last
+
+# Go to desktop / send window to desktop
+super + {_,shift + }{1-6}
+	bspc {desktop -f,node -d} '^{1-6}'
+
+# Previous / next desktop
+super + ctrl + {Left,Right}
+	bspc desktop -f {prev,next}.local
+
+## Media
+
+# Volume up / down / mute
+XF86Audio{RaiseVolume,LowerVolume,Mute}
+	rice-volume {up,down,mute}
+
+# Microphone mute
+XF86AudioMicMute
+	rice-volume mic-mute
+
+# Play-pause / next / previous / stop
+XF86Audio{Play,Pause,Next,Prev,Stop}
+	playerctl {play-pause,play-pause,next,previous,stop}
+
+# Play-pause / next / previous without media keys
+ctrl + alt + {c,x,z}
+	playerctl {play-pause,next,previous}

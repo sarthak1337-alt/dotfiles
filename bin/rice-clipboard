@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# rice-clipboard - clipboard history (greenclip). Picking an entry puts it back on
+# the clipboard, ready for super + v. rofi runs in dmenu mode so the header reads
+# "Clipboard": custom rofi modes ignore a custom title and show their mode name.
+pgrep -u "$UID" -x greenclip >/dev/null || setsid -f greenclip daemon >/dev/null 2>&1
+
+choice=$(greenclip print | sed '/^$/d' |
+  rofi -dmenu -i -no-custom -p "Clipboard" -theme "$HOME/.config/rofi/menu.rasi" \
+       -theme-str 'window { width: 640px; }') || exit 0
+
+[[ -n $choice ]] && greenclip print "$choice"

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run by dunst for every notification ([notify_centre] in dunstrc). It only
+# marks "something changed" so the notification centre and bar refresh.
+rev="${XDG_RUNTIME_DIR:-/tmp}/rice/notify.rev"
+mkdir -p "${rev%/*}"
+date +%s%N > "$rev"

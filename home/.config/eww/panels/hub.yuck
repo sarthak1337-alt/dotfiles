@@ -1,0 +1,50 @@
+;; Control centre (super + x): levels, a line per subsystem, quick switches, now playing.
+(defwindow hub
+  :monitor 0
+  :geometry (geometry :x "-10px" :y "47px" :width "400px" :anchor "top right")
+  :stacking "fg"
+  :wm-ignore true
+  :resizable false
+  (box :class "panel" :orientation "v" :space-evenly false
+    (head :title "Control Centre"
+      (head-action :glyph "󰍜" :tip "Rice menu" :onclick "rice-panel close; rice-menu main")
+      (head-action :glyph "󰐥" :tip "Power menu" :onclick "rice-panel close; rice-menu power"))
+
+    (slider-row :glyph {audio?.sink?.muted == true ? "󰝟" : "󰕾"}
+                :value {audio?.sink?.vol ?: 0} :muted {audio?.sink?.muted ?: false}
+                :onglyph "rice-volume mute" :onchange "rice-volume set {}")
+    (slider-row :glyph {audio?.source?.muted == true ? "󰍭" : "󰍬"}
+                :value {audio?.source?.vol ?: 0} :muted {audio?.source?.muted ?: false}
+                :onglyph "rice-audio mic-mute" :onchange "rice-audio mic {}")
+    (box :orientation "v" :space-evenly false :visible {display?.ddc == true}
+      (slider-row :glyph "󰃠" :value {display?.brightness ?: 0} :onchange "rice-display brightness {}"))
+
+    (sep)
+    (row :glyph {net?.active?.type == "ethernet" ? "󰈀" : (net?.active?.type == "wifi" ? "󰖩" : "󰖪")}
+         :title "Network" :value {net?.active?.name ?: "offline"} :chev true :onclick "rice-panel network")
+    (row :glyph "󰂯" :title "Bluetooth" :chev true :onclick "rice-panel bluetooth"
+         :value {bt?.powered != true ? "off" : (bt?.connected > 0 ? "${bt.connected} connected" : "on")})
+    (row :glyph "󰓃" :title "Sound" :value {audio?.sink?.name ?: ""} :chev true :onclick "rice-panel audio")
+    (row :glyph "󰍹" :title "Display" :chev true :onclick "rice-panel display"
+         :value "${display?.mode ?: ''} · ${round(display?.rate ?: 0, 0)} Hz")
+    (row :glyph "󰍛" :title "System" :chev true :onclick "rice-panel power"
+         :value "CPU ${power?.cpu?.load ?: 0}% · Memory ${power?.memory?.percent ?: 0}%")
+    (row :glyph "󰃭" :title "Calendar" :value {formattime(EWW_TIME, "%a %-d %b")} :chev true :onclick "rice-panel calendar")
+
+    (sep)
+    (switch-row :glyph "󰂛" :title "Do not disturb" :on {notifs?.dnd == true} :onclick "rice-notify dnd toggle"
+                :sub {(notifs?.count ?: 0) > 0 ? "${notifs.count} in the notification centre" : ""})
+    (switch-row :glyph "󰅶" :title "Stay awake" :on {idle?.awake == true} :onclick "rice-idle toggle"
+                :sub {idle?.awake == true ? "screensaver and lock paused" : ""})
+
+    (box :orientation "v" :space-evenly false :visible {media?.status == "Playing" || media?.status == "Paused"}
+      (sep)
+      (box :class "row" :space-evenly false
+        (label :class "glyph accent" :text "󰎆")
+        (eventbox :hexpand true :onclick "rice-panel media"
+          (box :orientation "v" :space-evenly false :valign "center"
+            (label :class "row-title" :xalign 0 :limit-width 22 :text {media?.title ?: ""})
+            (label :class "row-sub" :xalign 0 :limit-width 26 :text {media?.artist ?: ""})))
+        (button :class "media-btn" :onclick "playerctl previous" "󰒮")
+        (button :class "media-btn accent" :onclick "playerctl play-pause" {media?.status == "Playing" ? "󰏤" : "󰐊"})
+        (button :class "media-btn" :onclick "playerctl next" "󰒭")))))

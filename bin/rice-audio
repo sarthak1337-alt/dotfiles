@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# rice-audio - audio state for the eww panel, and the actions it runs.
+#
+#   rice-audio watch                    JSON on every change (eww deflisten)
+#   rice-audio sink <name>              default output; playing streams move with it
+#   rice-audio source <name>            default input
+#   rice-audio app-volume <index> <pct> volume of one playing app
+#   rice-audio app-mute <index>
+#   rice-audio mic <pct> | mic-mute
+set -uo pipefail
+
+snapshot() {
+  jq -cn \
+    --arg dsink "$(pactl get-default-sink 2>/dev/null)" \
+    --arg dsrc "$(pactl get-default-source 2>/dev/null)" \
+    --argjson sinks "$(pactl -f json list sinks 2>/dev/null || echo '[]')" \
+    --argjson sources "$(pactl -f json list sources 2>/dev/null || echo '[]')" \
+    --argjson apps "$(pactl -f json list sink-inputs 2>/dev/null || echo '[]')" '
+    def pct: [.volume[]?.value_percent | rtrimstr("%") | tonumber] | if length > 0 then (add / length | round) else 0 end;
+    def level: {name: (.description // ""), vol: pct, muted: (.mute // false)};
+    {
+      sink:    (($sinks   | map(select(.name == $dsink)) | .[0]) // {} | level),
+      source:  (($sources | map(select(.name == $dsrc))  | .[0]) // {} | level),
+      sinks:   [ $sinks[]   | {index, name, desc: .description, default: (.name == $dsink)} ],
+      sources: [ $sources[] | select(.name | endswith(".monitor") | not)
+                            | {index, name, desc: .description, default: (.name == $dsrc)} ],
+      apps:    [ $apps[] | {id: .index,
+                            name: (.properties["application.name"] // .properties["media.name"] // "app"),
+                            vol: pct, muted: .mute} ]
+    }'
+}
+
+watch() {
+  snapshot
+  pactl subscribe 2>/dev/null |
+    grep --line-buffered -E "'(change|new|remove)' on (sink|source|sink-input|server)" |
+    while read -r _; do
+      # A slider drag fires dozens of events; wait for the burst to end.
+      while read -r -t 0.08 _; do :; done
+      snapshot
+    done
+}
+
+# Panel buttons pass numeric indexes, never device names, so nothing a
+# device reports about itself ends up inside a shell command.
+num() { [[ ${1:-} =~ ^[0-9]+$ ]] || { echo "rice-audio: expected a number, got '${1:-}'" >&2; exit 2; }; }
+
+case "${1:-}" in
+  watch) watch ;;
+  sink)
+    num "${2:-}"
+    pactl set-default-sink "$2"
+    pactl -f json list sink-inputs | jq -r '.[].index' | while read -r i; do pactl move-sink-input "$i" "$2"; done
+    ;;
+  source)     num "${2:-}"; pactl set-default-source "$2" ;;
+  app-volume) num "${2:-}"; num "${3:-}"; pactl set-sink-input-volume "$2" "$3%" ;;
+  app-mute)   num "${2:-}"; pactl set-sink-input-mute "$2" toggle ;;
+  mic)        num "${2:-}"; wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SOURCE@ "$2%" ;;
+  mic-mute)   rice-volume mic-mute ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

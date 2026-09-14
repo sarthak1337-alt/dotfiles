@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+# rice-cal - data and actions for the calendar panel. Events live in khal,
+# synced with the CalDAV server by vdirsyncer; reminders come from rice-reminder.
+#
+#   rice-cal month                month grid JSON (ISO weeks, Monday first); marks days with events
+#   rice-cal agenda               events and reminders for the selected day
+#   rice-cal select <YYYY-MM-DD>  pick a day
+#   rice-cal shift <-1|1>         previous / next month
+#   rice-cal today
+#   rice-cal add                  new event on the selected day, typed in rofi:
+#                                   "15:00 dentist"  "15:00-16:30 review"  "holiday" (all day)
+#                                   timed events remind you 10 minutes before; end with !30m or !no
+#   rice-cal sync                 sync with the server in the background
+#   rice-cal setup                connect a CalDAV server (asks for URL, user, password; run in a terminal)
+set -uo pipefail
+
+e()   { eww -c "$HOME/.config/eww" "$@"; }
+var() { e get "$1" 2>/dev/null; }
+have_khal() { command -v khal >/dev/null && [[ -f ${XDG_CONFIG_HOME:-$HOME/.config}/khal/config ]]; }
+isodate() { [[ ${1:-} =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && date -d "$1" +%F >/dev/null 2>&1; }
+
+selected() { local d; d=$(var cal_day); isodate "$d" && echo "$d" || date +%F; }
+offset()   { local o; o=$(var cal_offset); [[ $o =~ ^-?[0-9]+$ ]] && echo "$o" || echo 0; }
+
+reminders() { rice-reminder json 2>/dev/null || echo '[]'; }
+
+month() {
+  local off="${1:-$(offset)}" sel="${2:-$(selected)}" first start end counts="{}"
+  first=$(date -d "$(date +%Y-%m-01) $off month" +%F)
+  start=$(date -d "$first -$(( $(date -d "$first" +%u) - 1 )) days" +%F)
+  end=$(date -d "$start +42 days" +%F)
+
+  if have_khal; then
+    counts=$(khal list --once --day-format "" --format "{start-date}" "$start" "$end" 2>/dev/null |
+      grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | sort | uniq -c |
+      jq -R -s -c 'split("\n") | map(select(length > 0) | ltrimstr(" ") | capture("^ *(?<n>[0-9]+) (?<d>.+)$") | {(.d): (.n | tonumber)}) | add // {}')
+  fi
+
+  for i in $(seq 0 41); do date -d "$start +$i days" '+%F %-d %m %u %V'; done |
+    jq -R -s -c --arg title "$(date -d "$first" '+%B %Y')" --arg today "$(date +%F)" --arg sel "$sel" \
+       --arg month "$(date -d "$first" +%m)" --argjson counts "$counts" --argjson rem "$(reminders)" '
+      ($rem | group_by(.date) | map({(.[0].date): length}) | add // {}) as $rc |
+      split("\n") | map(select(length > 0) | split(" ")) as $days |
+      {
+        title: $title,
+        dow: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+        weeks: [ range(0; 6) as $w | $days[$w * 7:($w + 1) * 7] | {
+          wk: (.[0][4] | tonumber | tostring),
+          days: map({
+            date: .[0], d: .[1],
+            other: (.[2] != $month),
+            weekend: ((.[3] | tonumber) >= 6),
+            today: (.[0] == $today),
+            selected: (.[0] == $sel and .[0] != $today),
+            events: (($counts[.[0]] // 0) + ($rc[.[0]] // 0))
+          })
+        } ]
+      }'
+}
+
+agenda() {
+  local day="${1:-$(selected)}" heading items="[]" status="" sep=$'\x1f'
+  heading=$(date -d "$day" '+%A %-d %B')
+  [[ $day == "$(date +%F)" ]] && heading="Today · $heading"
+
+  if have_khal; then
+    items=$(khal list --day-format "" --format "{start-time}${sep}{end-time}${sep}{title}${sep}{location}" "$day" 1d 2>/dev/null |
+      jq -R -s -c --arg sep "$sep" '
+        split("\n") | map(select(length > 0) | split($sep) | {
+          kind: "event", id: "",
+          time: (if .[0] == "" then "all day" else .[0] end),
+          title: .[2],
+          sub: ([(if .[0] != "" and .[1] != "" then "until " + .[1] else empty end),
+                 (if (.[3] // "") != "" then .[3] else empty end)] | join(" · "))
+        })')
+  else
+    status="Events need khal set up (run install.sh)"
+  fi
+
+  jq -cn --arg heading "$heading" --arg status "$status" --arg day "$day" \
+    --argjson items "${items:-[]}" --argjson rem "$(reminders)" '
+    {heading: $heading, status: $status,
+     items: ($items + [ $rem[] | select(.date == $day) | {kind: "reminder", id: .id, time: .time, title: .text, sub: "reminder"} ]
+             | sort_by(if .time == "all day" then "00:00" else .time end))}'
+}
+
+# Push new data straight into eww so clicks feel instant.
+refresh() {
+  local off="$1" day="$2"
+  e update cal_offset="$off" cal_day="$day"
+  e update month="$(month "$off" "$day")" agenda="$(agenda "$day")"
+}
+
+add() {
+  have_khal || { rice-notify send "Calendar" "Events need khal set up (run install.sh)"; exit 1; }
+  local day input remind=10m start="" end="" title
+  day=$(selected)
+  input=$(rofi -dmenu -theme "$HOME/.config/rofi/prompt.rasi" -p "$(date -d "$day" '+%a %-d %b')" \
+    -mesg "15:00 dentist   ·   15:00-16:30 review   ·   holiday   ·   end with !30m or !no") || exit 0
+  [[ -n $input ]] || exit 0
+
+  if [[ $input =~ ^(.*[^[:space:]])[[:space:]]+!(no|[0-9]+[mhd])$ ]]; then
+    input="${BASH_REMATCH[1]}"; remind="${BASH_REMATCH[2]}"
+  fi
+
+  if [[ $input =~ ^([0-9]{1,2}:[0-9]{2})(-([0-9]{1,2}:[0-9]{2}))?[[:space:]]+(.+)$ ]]; then
+    start="${BASH_REMATCH[1]}"; end="${BASH_REMATCH[3]}"; title="${BASH_REMATCH[4]}"
+    khal new "$day" "$start" "${end:-1h}" "$title" >/dev/null 2>&1 || { rice-notify send "Calendar" "khal could not add that"; exit 1; }
+    if [[ $remind != no ]]; then
+      local amount="${remind%?}" unit
+      case "${remind: -1}" in m) unit=minutes ;; h) unit=hours ;; d) unit=days ;; esac
+      at=$(date -d "$day $start $amount $unit ago" '+%F %H:%M' 2>/dev/null) &&
+        rice-reminder add "$at" "$title at $start" >/dev/null 2>&1
+    fi
+  else
+    title="$input"
+    khal new "$day" "$title" >/dev/null 2>&1 || { rice-notify send "Calendar" "khal could not add that"; exit 1; }
+  fi
+
+  rice-notify send "Event added" "$title · $(date -d "$day" '+%a %-d %b') ${start:-all day}"
+  setsid -f vdirsyncer sync >/dev/null 2>&1
+  refresh "$(offset)" "$day"
+}
+
+setup() {
+  local conf="${XDG_CONFIG_HOME:-$HOME/.config}" share="${XDG_DATA_HOME:-$HOME/.local/share}"
+  local secrets="$conf/rice/secrets" data="$share/calendars" url user pass first
+  command -v vdirsyncer >/dev/null && command -v khal >/dev/null ||
+    { echo "rice-cal: install khal and vdirsyncer first"; return 1; }
+
+  read -rp "CalDAV URL [https://dav.srtk.in/dav.php/]: " url </dev/tty
+  url="${url:-https://dav.srtk.in/dav.php/}"
+  [[ $url =~ ^https://[^\"[:space:]]+$ ]] || { echo "rice-cal: use an https:// URL"; return 1; }
+  read -rp "Username: " user </dev/tty
+  [[ $user =~ ^[A-Za-z0-9._@+-]+$ ]] || { echo "rice-cal: that username has characters vdirsyncer can't take"; return 1; }
+  read -rsp "Password: " pass </dev/tty; echo
+
+  # The password stays in a private file; the configs only point at it.
+  mkdir -p "$secrets" && chmod 700 "$secrets"
+  (umask 077; printf '%s' "$pass" > "$secrets/caldav")
+  unset pass
+  mkdir -p "$conf/vdirsyncer" "$conf/khal" "$data" "$share/vdirsyncer/status"
+
+  cat > "$conf/vdirsyncer/config" <<EOF
+# Written by rice-cal setup. The password is read from $secrets/caldav.
+[general]
+status_path = "$share/vdirsyncer/status/"
+
+[pair calendar]
+a = "calendar_local"
+b = "calendar_remote"
+collections = ["from a", "from b"]
+metadata = ["displayname", "color"]
+conflict_resolution = "b wins"
+
+[storage calendar_local]
+type = "filesystem"
+path = "$data/"
+fileext = ".ics"
+
+[storage calendar_remote]
+type = "caldav"
+url = "$url"
+username = "$user"
+password.fetch = ["command", "cat", "$secrets/caldav"]
+EOF
+
+  echo "Connecting to $url ..."
+  yes | vdirsyncer discover calendar >/dev/null || { echo "rice-cal: could not sign in to $url with those details"; return 1; }
+  vdirsyncer metasync >/dev/null 2>&1
+  vdirsyncer sync || { echo "rice-cal: first sync failed"; return 1; }
+
+  first=$(find "$data" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | head -n1)
+  [[ -n $first ]] || { first=personal; mkdir -p "$data/$first"; }
+
+  cat > "$conf/khal/config" <<EOF
+# Written by rice-cal setup.
+[calendars]
+  [[synced]]
+    path = $data/*
+    type = discover
+
+[locale]
+timeformat = %H:%M
+dateformat = %Y-%m-%d
+longdateformat = %Y-%m-%d
+datetimeformat = %Y-%m-%d %H:%M
+longdatetimeformat = %Y-%m-%d %H:%M
+firstweekday = 0
+
+[default]
+default_calendar = $first
+highlight_event_days = True
+EOF
+
+  systemctl --user enable --now vdirsyncer.timer >/dev/null 2>&1
+  echo "Calendar ready: new events go to '$first', and it syncs every 15 minutes."
+}
+
+case "${1:-}" in
+  setup)  setup ;;
+  month)  month ;;
+  agenda) agenda ;;
+  select)
+    isodate "${2:-}" || { echo "rice-cal: select takes YYYY-MM-DD" >&2; exit 2; }
+    now=$(date +%Y*12+%-m | sed 's/^0*//'); then=$(date -d "$2" +%Y*12+%-m)
+    refresh "$(( then - now ))" "$2"
+    ;;
+  shift)
+    [[ ${2:-} =~ ^-?[0-9]+$ ]] || { echo "rice-cal: shift takes a number" >&2; exit 2; }
+    off=$(( $(offset) + $2 ))
+    if (( off == 0 )); then day=$(date +%F); else day=$(date -d "$(date +%Y-%m-01) $off month" +%F); fi
+    refresh "$off" "$day"
+    ;;
+  today) refresh 0 "$(date +%F)" ;;
+  add)   add ;;
+  sync)  setsid -f vdirsyncer sync >/dev/null 2>&1 ;;
+  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

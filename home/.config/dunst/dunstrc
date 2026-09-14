@@ -1,0 +1,102 @@
+# Sakura Line - dunst behaviour. Colours and fonts come from the theme drop-in
+# (dunstrc.d/50-theme.conf -> ~/.local/state/rice/theme/dunst.conf).
+
+[global]
+    monitor = 0
+    follow = mouse
+    origin = top-right
+    # Same outer edges as tiled windows and popups. bspwm draws borders inside the
+    # gap, so that is one gap (10px) in from the right and bar (37px) + gap down.
+    offset = (10, 47)
+    width = (300, 400)
+    height = (0, 300)
+    notification_limit = 5
+    gap_size = 6
+    padding = 12
+    horizontal_padding = 14
+    text_icon_padding = 12
+    frame_width = 1
+    corner_radius = 12
+    progress_bar = true
+    progress_bar_height = 6
+    progress_bar_frame_width = 0
+    progress_bar_min_width = 150
+    progress_bar_max_width = 372
+    progress_bar_corner_radius = 3
+    indicate_hidden = yes
+    sort = urgency_descending
+    idle_threshold = 120
+    line_height = 2
+    markup = full
+    format = "<b>%s</b>\n%b"
+    alignment = left
+    vertical_alignment = center
+    show_age_threshold = 60
+    ellipsize = middle
+    word_wrap = yes
+    ignore_newline = no
+    stack_duplicates = true
+    hide_duplicate_count = false
+    show_indicators = no
+    enable_recursive_icon_lookup = true
+    icon_position = left
+    min_icon_size = 32
+    max_icon_size = 48
+    sticky_history = yes
+    history_length = 50
+    always_run_script = true
+    dmenu = /usr/bin/rofi -dmenu -theme ~/.config/rofi/menu.rasi -p "Actions"
+    browser = /usr/bin/xdg-open
+    title = Dunst
+    class = Dunst
+    default_pause_level = 0
+    mouse_left_click = do_action, close_current
+    mouse_middle_click = close_all
+    mouse_right_click = close_current
+
+[urgency_low]
+    timeout = 4
+
+[urgency_normal]
+    timeout = 6
+
+[urgency_critical]
+    timeout = 0
+
+# Do-not-disturb (rice-notify dnd) sets pause level 60. Your own confirmations
+# and critical alerts sent from the command line still get through; chat apps
+# that mark everything critical use their own app name, so they stay quiet.
+[rice_feedback]
+    appname = "rice"
+    override_pause_level = 100
+
+[critical_cli]
+    appname = "notify-send"
+    msg_urgency = critical
+    override_pause_level = 100
+
+# Volume, brightness and recording progress: replaced in place, never kept.
+[osd]
+    appname = "osd"
+    format = "<b>%s</b>"
+    icon_position = off
+    timeout = 2
+    history_ignore = yes
+    override_pause_level = 100
+
+# Every other notification pokes the notification centre so its count and list stay live.
+[notify_centre]
+    appname = "*"
+    script = ~/.local/bin/rice-notify-hook
+
+[fullscreen_delay]
+    fullscreen = delay
+
+[fullscreen_critical]
+    msg_urgency = critical
+    fullscreen = show
+
+[flameshot_noise]
+    body = "grim's screenshot component is implemented based on wlroots*"
+    skip_display = true
+    history_ignore = yes

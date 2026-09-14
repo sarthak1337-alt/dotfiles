@@ -1,0 +1,37 @@
+;; Network: Wi-Fi radio, the active connection, nearby networks and VPNs.
+(defwindow network
+  :monitor 0
+  :geometry (geometry :x "-10px" :y "47px" :width "380px" :anchor "top right")
+  :stacking "fg"
+  :wm-ignore true
+  :resizable false
+  (box :class "panel" :orientation "v" :space-evenly false
+    (head :title "Network"
+      (head-action :glyph "󰑓" :tip "Rescan" :onclick "rice-net rescan")
+      (head-action :glyph "󰐲" :tip "Share Wi-Fi as a QR code" :onclick "rice-panel close; rice-net share")
+      (head-action :glyph "󰒓" :tip "Connection editor" :onclick "rice-panel close; setsid -f nm-connection-editor"))
+
+    (box :orientation "v" :space-evenly false :visible {net?.active?.type == "ethernet"}
+      (row :glyph "󰈀" :title "Ethernet" :sub {net?.active?.name ?: ""} :active true))
+
+    ;; Machines without a Wi-Fi adapter (like a wired desktop) skip this part.
+    (box :orientation "v" :space-evenly false :visible {net?.hasWifi == true}
+      (switch-row :glyph "󰖩" :title "Wi-Fi" :on {net?.radio == true}
+                  :onclick "rice-net radio toggle"
+                  :sub {net?.active?.type == "wifi" ? net.active.name : (net?.radio == true ? "not connected" : "off")}))
+
+    (box :orientation "v" :space-evenly false :visible {net?.hasWifi == true && net?.radio == true}
+      (section :text "Networks")
+      (box :orientation "v" :space-evenly false
+        (for w in {net?.wifi ?: []}
+          (row :glyph {w.glyph} :title {w.ssid} :sub {w.sub} :active {w.active}
+               :onclick {w.active ? "rice-net disconnect" : "rice-net connect ${w.id}"})))
+      (box :visible {arraylength(net?.wifi ?: []) == 0}
+        (empty :text "No networks found yet")))
+
+    (box :orientation "v" :space-evenly false :visible {arraylength(net?.vpn ?: []) > 0}
+      (section :text "VPN")
+      (box :orientation "v" :space-evenly false
+        (for v in {net?.vpn ?: []}
+          (row :glyph {v.active ? "󰖂" : "󰕥"} :title {v.name} :sub {v.active ? "connected" : ""}
+               :active {v.active} :onclick "rice-net vpn ${v.id}"))))))

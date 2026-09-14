@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# rice-notify - one front door for notifications.
+#
+#   rice-notify send <title> [body] [-i icon] [-u low|normal|critical]
+#   rice-notify dismiss | dismiss-all | action | restore
+#   rice-notify dnd on|off|toggle|status
+#   rice-notify remove <id> | clear
+#   rice-notify watch        JSON stream for the notification centre (eww)
+#
+# Do-not-disturb is dunst pause level 60, not "paused": rules in dunstrc give
+# rice's own confirmations and critical CLI alerts level 100 so they still show.
+set -uo pipefail
+
+DND_LEVEL=60
+rev="${XDG_RUNTIME_DIR:-/tmp}/rice/notify.rev"
+mkdir -p "${rev%/*}"
+
+poke() {
+  date +%s%N > "$rev"
+  pgrep -x polybar >/dev/null && polybar-msg action indicators hook 0 >/dev/null 2>&1
+  return 0
+}
+
+dnd_on() { (( $(dunstctl get-pause-level 2>/dev/null || echo 0) > 0 )); }
+
+history_json() {
+  local uptime
+  uptime=$(cut -d' ' -f1 /proc/uptime)
+  dunstctl history 2>/dev/null | jq -c --argjson up "$uptime" '
+    [ .data[0][]? | {
+        id:      .id.data,
+        app:     .appname.data,
+        summary: .summary.data,
+        body:    (.body.data | gsub("<[^>]*>"; "") | split("\n")
+                  | map(gsub("^\\s+|\\s+$"; "") | select(length > 0)) | .[0:2] | join(" · ")
+                  | if length > 110 then .[0:109] + "…" else . end),
+        icon:    (.icon_path.data // ""),
+        urgency: (.urgency.data | tostring | ascii_upcase),
+        age:     (($up - (.timestamp.data / 1000000)) | floor)
+      }
+      | .ago = (if .age < 60 then "now"
+                elif .age < 3600 then "\(.age / 60 | floor)m"
+                elif .age < 86400 then "\(.age / 3600 | floor)h"
+                else "\(.age / 86400 | floor)d" end)
+    ]' || echo '[]'
+}
+
+snapshot() {
+  local items
+  items=$(history_json)
+  jq -cn --argjson items "$items" \
+    --argjson dnd "$(dnd_on && echo true || echo false)" \
+    --argjson waiting "$(dunstctl count waiting 2>/dev/null || echo 0)" \
+    '{count: ($items | length), dnd: $dnd, waiting: $waiting, items: $items[:8]}'
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  send)
+    title="${1:-}"; body="${2:-}"; shift 2 2>/dev/null || shift $#
+    notify-send -a rice "$@" "$title" "$body"
+    ;;
+  dismiss)      dunstctl close;        poke ;;
+  dismiss-all)  dunstctl close-all;    poke ;;
+  action)       dunstctl action 0;     poke ;;
+  restore)      dunstctl history-pop;  poke ;;
+  remove)       [[ ${1:-} =~ ^[0-9]+$ ]] && dunstctl history-rm "$1"; poke ;;
+  open)         [[ ${1:-} =~ ^[0-9]+$ ]] && dunstctl history-pop "$1"; poke ;;
+  clear)        dunstctl history-clear; poke ;;
+  dnd)
+    case "${1:-toggle}" in
+      on)     dunstctl set-pause-level "$DND_LEVEL" ;;
+      off)    dunstctl set-pause-level 0 ;;
+      toggle) if dnd_on; then dunstctl set-pause-level 0; else dunstctl set-pause-level "$DND_LEVEL"; fi ;;
+      status) dnd_on && echo on || echo off; exit 0 ;;
+    esac
+    if dnd_on; then
+      notify-send -a rice -u low -h string:x-dunst-stack-tag:dnd "Do not disturb" "Only alarms and critical alerts will show"
+    else
+      notify-send -a rice -u low -h string:x-dunst-stack-tag:dnd "Do not disturb off" "$(dunstctl count waiting) held back"
+    fi
+    poke
+    ;;
+  watch)
+    [[ -f $rev ]] || poke
+    while :; do
+      snapshot
+      inotifywait -qq -t 5 -e close_write "$rev" 2>/dev/null
+    done
+    ;;
+  *)
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    [[ -z $cmd ]] || exit 2
+    ;;
+esac

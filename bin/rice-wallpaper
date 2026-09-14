@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# rice-wallpaper - the desktop background.
+#
+#   rice-wallpaper set <image>      set it and remember it
+#   rice-wallpaper restore          set the remembered one (session start)
+#   rice-wallpaper theme-default    set the active theme's own wallpaper
+#   rice-wallpaper next             the next image in the list
+#   rice-wallpaper list             images from the rice, ~/.config/rice/wallpapers and ~/Pictures/Wallpapers
+#   rice-wallpaper thumb <image>    a cached 400x250 thumbnail for the pickers
+set -uo pipefail
+
+RICE_DIR="${RICE_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
+state="${XDG_STATE_HOME:-$HOME/.local/state}/rice"
+remembered="$state/wallpaper"
+thumbs="${XDG_CACHE_HOME:-$HOME/.cache}/rice/thumbs"
+mkdir -p "$state" "$thumbs"
+
+list() {
+  find -L "$RICE_DIR/wallpapers" "${XDG_CONFIG_HOME:-$HOME/.config}/rice/wallpapers" "$HOME/Pictures/Wallpapers" \
+    -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort
+}
+
+apply() {
+  [[ -f $1 ]] || { echo "rice-wallpaper: no such image: $1" >&2; return 1; }
+  feh --no-fehbg --bg-fill "$1" && realpath -- "$1" > "$remembered"
+}
+
+case "${1:-}" in
+  set) apply "${2:?usage: rice-wallpaper set <image>}" ;;
+  restore)
+    if [[ -f $remembered && -f $(cat "$remembered") ]]; then apply "$(cat "$remembered")"; else "$0" theme-default; fi
+    ;;
+  theme-default)
+    name=$(rice-theme get wallpaper 2>/dev/null)
+    [[ -n $name && -f $RICE_DIR/wallpapers/$name ]] && apply "$RICE_DIR/wallpapers/$name"
+    ;;
+  next)
+    mapfile -t all < <(list)
+    (( ${#all[@]} > 0 )) || exit 1
+    current=$(cat "$remembered" 2>/dev/null)
+    for i in "${!all[@]}"; do
+      if [[ ${all[$i]} == "$current" ]]; then apply "${all[$(( (i + 1) % ${#all[@]} ))]}"; exit; fi
+    done
+    apply "${all[0]}"
+    ;;
+  list) list ;;
+  thumb)
+    img="${2:?usage: rice-wallpaper thumb <image>}"
+    out="$thumbs/$(printf '%s:%s' "$img" "$(stat -c %Y -- "$img" 2>/dev/null)" | sha1sum | cut -c1-16).jpg"
+    if [[ ! -s $out ]] && command -v magick >/dev/null; then
+      magick "${img}[0]" -thumbnail '400x250^' -gravity center -extent 400x250 -quality 85 "$out" 2>/dev/null
+    fi
+    if [[ -s $out ]]; then echo "$out"; else echo "$img"; fi
+    ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

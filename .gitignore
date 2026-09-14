@@ -1,0 +1,9 @@
+# build output
+particles/particles
+particles/*.o
+
+# never commit private files, even if someone copies them in here
+home/.config/rice/secrets/
+home/.config/rice/local.sh
+home/.bashrc.local
+home/.config/rice/theme.override.toml

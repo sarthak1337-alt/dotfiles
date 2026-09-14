@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# rice-scratchpad - drop-down terminal on super + `. It is a persistent tmux
+# session, so whatever runs in it survives being hidden or closed.
+command -v tdrop >/dev/null || { rice-notify send "Drop-down terminal" "Install tdrop to use it"; exit 1; }
+exec tdrop -a -w 70% -h 45% -x 15% -y 45 --class rice-scratchpad \
+  st -c rice-scratchpad -e tmux new-session -A -s scratchpad

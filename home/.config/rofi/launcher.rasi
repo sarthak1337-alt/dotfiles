@@ -1,0 +1,6 @@
+/* App launcher (super + w). */
+@import "~/.config/rofi/rice.rasi"
+
+window       { width: 620px; }
+listview     { lines: 9; fixed-height: true; }
+element-icon { size: 1.6em; }

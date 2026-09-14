@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# rice-hook <event> [args...] - run your own scripts when something happens.
+#
+# Every executable file in ~/.config/rice/hooks/<event>.d/ runs, in name order,
+# with the event's arguments. Events:
+#   post-boot                    the desktop has started
+#   theme-set <name>             a theme was applied
+#   font-set <family>            the font changed
+#   wallpaper-set <image>        the wallpaper changed
+#   lock / unlock                the screen locked or unlocked
+#   update                       install.sh --update finished
+set -uo pipefail
+
+event="${1:?usage: rice-hook <event> [args...]}"
+shift
+[[ $event =~ ^[a-z-]+$ ]] || { echo "rice-hook: bad event name '$event'" >&2; exit 2; }
+
+dir="${XDG_CONFIG_HOME:-$HOME/.config}/rice/hooks/$event.d"
+log="${XDG_STATE_HOME:-$HOME/.local/state}/rice/hooks.log"
+[[ -d $dir ]] || exit 0
+mkdir -p "$(dirname "$log")"
+
+for hook in "$dir"/*; do
+  [[ -f $hook && -x $hook && $hook != *.sample ]] || continue
+  if ! "$hook" "$@" >>"$log" 2>&1; then
+    printf '%s  %s failed (exit %s)\n' "$(date -Is)" "$hook" "$?" >>"$log"
+  fi
+done

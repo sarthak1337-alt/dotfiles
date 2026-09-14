@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# rice-reminder - desktop reminders backed by systemd user timers.
+#
+#   rice-reminder new                  ask in rofi
+#   rice-reminder add <when> <text>    when: 20m | 1h30m | 15:30 | "tomorrow 9:00" | "2026-09-15 09:00"
+#   rice-reminder list                 upcoming reminders as a notification
+#   rice-reminder json                 upcoming reminders as JSON (calendar panel)
+#   rice-reminder cancel <id> | clear
+#
+# In rofi, type "20m tea", "15:30 standup" or "tomorrow 9:00 | dentist".
+# Reminders use app name "rice", so they still show during do-not-disturb.
+set -uo pipefail
+
+self="$(readlink -f "$0")"
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+mkdir -p "$run"
+poke() { date +%s%N > "$run/reminder.rev"; }
+say()  { notify-send -a rice -u low -i alarm-symbolic "$@"; }
+
+# Resolve a "when" into epoch seconds, or fail.
+resolve() {
+  local when="$1" now t
+  now=$(date +%s)
+  if [[ $when =~ ^([0-9]+[smhd])+$ ]]; then
+    local secs=0 part
+    for part in $(grep -oE '[0-9]+[smhd]' <<<"$when"); do
+      case "${part: -1}" in
+        s) secs=$((secs + ${part%?})) ;;
+        m) secs=$((secs + ${part%?} * 60)) ;;
+        h) secs=$((secs + ${part%?} * 3600)) ;;
+        d) secs=$((secs + ${part%?} * 86400)) ;;
+      esac
+    done
+    echo $((now + secs)); return
+  fi
+  if [[ $when =~ ^[0-9]{1,2}:[0-9]{2}$ ]]; then
+    t=$(date -d "today $when" +%s 2>/dev/null) || return 1
+    (( t <= now )) && t=$(date -d "tomorrow $when" +%s)
+    echo "$t"; return
+  fi
+  t=$(date -d "$when" +%s 2>/dev/null) || return 1
+  (( t > now )) || return 1
+  echo "$t"
+}
+
+add() {
+  local when="$1" text="${2:-Reminder}" at unit
+  at=$(resolve "$when") || { say "Reminder" "Couldn't read \"$when\" as a time"; return 1; }
+  unit="rice-reminder-$(date +%s%N)"
+  systemd-run --user --quiet --collect --unit="$unit" --description="$text" \
+    --on-calendar="$(date -d "@$at" '+%Y-%m-%d %H:%M:%S')" \
+    --timer-property=AccuracySec=1s \
+    -- "$self" fire "$text" || { say "Reminder" "Could not schedule it"; return 1; }
+  say "Reminder set" "$text · $(date -d "@$at" '+%a %H:%M')"
+  poke
+}
+
+upcoming() {
+  local unit next
+  systemctl --user list-timers 'rice-reminder-*' --all -o json 2>/dev/null |
+    jq -r '.[] | [.unit, (.next / 1000000 | floor)] | @tsv' |
+    while IFS=$'\t' read -r unit next; do
+      (( next > 0 )) || continue
+      printf '%s\t%s\t%s\n' "${unit%.timer}" "$next" "$(systemctl --user show -p Description --value "$unit")"
+    done | sort -t$'\t' -k2,2n
+}
+
+case "${1:-}" in
+  new)
+    input=$(rofi -dmenu -theme "$HOME/.config/rofi/prompt.rasi" -p "Reminder" \
+      -mesg "20m tea   ·   15:30 standup   ·   tomorrow 9:00 | dentist") || exit 0
+    [[ -n $input ]] || exit 0
+    if [[ $input == *"|"* ]]; then
+      when="${input%%|*}"; text="${input#*|}"
+    else
+      when="${input%% *}"; text="${input#"$when"}"
+    fi
+    when="$(sed 's/^ *//; s/ *$//' <<<"$when")"; text="$(sed 's/^ *//; s/ *$//' <<<"$text")"
+    add "$when" "${text:-Reminder}"
+    ;;
+  add)    add "${2:?when}" "${3:-Reminder}" ;;
+  fire)
+    notify-send -a rice -u critical -i alarm-symbolic "Reminder" "${2:-Reminder}"
+    command -v paplay >/dev/null && [[ -f /usr/share/sounds/freedesktop/stereo/complete.oga ]] &&
+      paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null
+    poke
+    ;;
+  list)
+    body=$(upcoming | while IFS=$'\t' read -r _ next text; do printf '%s  %s\n' "$(date -d "@$next" '+%a %H:%M')" "$text"; done)
+    say "Upcoming reminders" "${body:-Nothing scheduled}"
+    ;;
+  json)
+    upcoming | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t")
+      | {id: .[0], at: (.[1] | tonumber), time: (.[1] | tonumber | strflocaltime("%H:%M")),
+         date: (.[1] | tonumber | strflocaltime("%Y-%m-%d")), text: .[2]})'
+    ;;
+  cancel)
+    [[ ${2:-} =~ ^rice-reminder-[0-9]+$ ]] || { echo "rice-reminder: cancel takes a reminder id" >&2; exit 2; }
+    systemctl --user stop "$2.timer" && poke
+    ;;
+  clear)
+    systemctl --user list-timers 'rice-reminder-*' --all --no-legend 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /\.timer$/) print $i }' |
+      xargs -r systemctl --user stop
+    say "Reminders" "All cleared"; poke
+    ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

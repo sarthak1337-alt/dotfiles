@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# rice-menu <menu> - every rofi menu in the rice.
+#   main  power  toggles  capture  style  theme  wallpaper  screensavers  setup
+set -uo pipefail
+
+R="$HOME/.config/rofi"
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+RICE_DIR="${RICE_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
+
+# show <title> <active-rows> <row>...   rows are "glyph|label|command";
+# active rows (comma-separated indexes) get the accent colour, like panel rows.
+show() {
+  local title="$1" active="$2"; shift 2
+  local choice row cmd
+  choice=$(for row in "$@"; do IFS='|' read -r g l _ <<<"$row"; printf '%s  %s\n' "$g" "$l"; done |
+    rofi -dmenu -i -no-custom -format i -theme "$R/menu.rasi" -p "$title" ${active:+-a "$active"}) || exit 0
+  [[ $choice =~ ^[0-9]+$ ]] || exit 0
+  row="${*:$((choice + 1)):1}"
+  cmd="${row#*|}"; cmd="${cmd#*|}"
+  eval "$cmd"
+}
+
+# Open a file in the editor in a floating terminal, then run a follow-up.
+edit() { setsid -f st -c rice-float -e sh -c "${EDITOR:-nvim} \"\$1\"; ${2:-true}" _ "$1" >/dev/null 2>&1; }
+
+# Image grid: <title> <command> then lines of "label<TAB>image<TAB>value".
+grid() {
+  local title="$1" action="$2" lines choice value
+  lines=$(cat)
+  [[ -n $lines ]] || { rice-notify send "$title" "Nothing to pick from"; exit 0; }
+  choice=$(while IFS=$'\t' read -r label image _; do printf '%s\0icon\x1f%s\n' "$label" "$image"; done <<<"$lines" |
+    rofi -dmenu -i -no-custom -format i -show-icons -theme "$R/grid.rasi" -p "$title") || exit 0
+  [[ $choice =~ ^[0-9]+$ ]] || exit 0
+  value=$(sed -n "$((choice + 1))p" <<<"$lines" | cut -f3)
+  "$action" "$value"
+}
+
+rice-theme-set()     { rice-theme set "$1"; }
+rice-wallpaper-set() { rice-wallpaper set "$1"; }
+
+case "${1:-main}" in
+  main)
+    show "Menu" "" \
+      "󰀻|Apps|rofi -show drun" \
+      "󰍜|Control centre|rice-panel hub" \
+      "󰃭|Calendar|rice-panel calendar" \
+      "󰂚|Notifications|rice-panel notifications" \
+      "󰀠|New reminder|rice-reminder new" \
+      "󰄀|Capture|exec rice-menu capture" \
+      "󰔎|Toggles|exec rice-menu toggles" \
+      "󰏘|Style|exec rice-menu style" \
+      "󰞅|Emoji|rice-emoji" \
+      "󰅌|Clipboard|rice-clipboard" \
+      "󰌌|Keybindings|rice-keys" \
+      "󰒓|Setup|exec rice-menu setup" \
+      "󰐥|Power|exec rice-menu power"
+    ;;
+  power)
+    show "Power" "" \
+      "󰌾|Lock|rice-lock" \
+      "󱄄|Screensaver|rice-screensaver now" \
+      "󰒲|Suspend|systemctl suspend" \
+      "󰍃|Log out|rice-power logout" \
+      "󰜉|Reboot|rice-power reboot" \
+      "󰐥|Shut down|rice-power shutdown"
+    ;;
+  toggles)
+    active=()
+    [[ $(rice-notify dnd status) == on ]]          && active+=(0)
+    [[ -f $run/stay-awake ]]                       && active+=(1)
+    pgrep -f 'nerd-dictation begin' >/dev/null     && active+=(3)
+    pgrep -x particles >/dev/null                  && active+=(4)
+    [[ -f $run/webcam.pid ]]                       && active+=(5)
+    show "Toggles" "$(IFS=,; echo "${active[*]}")" \
+      "󰂛|Do not disturb|rice-notify dnd toggle" \
+      "󰅶|Stay awake|rice-idle toggle" \
+      "󰍜|Bar|rice-bar toggle" \
+      "󰍬|Dictation|rice-dictate toggle" \
+      "󰝨|Particles|setsid -f particles" \
+      "󰖠|Webcam overlay|rice-capture webcam" \
+      "󱂬|Drop-down terminal|rice-scratchpad"
+    ;;
+  capture)
+    rows=("󰹑|Screenshot a region|rice-capture region" "󰍹|Screenshot the screen|rice-capture screen")
+    if pgrep -x gpu-screen-reco >/dev/null; then rows+=("󰓛|Stop recording|rice-capture record")
+    else rows+=("󰑋|Record the screen|rice-capture record"); fi
+    rows+=("󰴑|Copy text from a region|rice-capture text" \
+           "󰐲|Read a QR code|rice-capture qr" \
+           "󰏘|Pick a colour|rice-capture color" \
+           "󰖠|Webcam overlay|rice-capture webcam" \
+           "󰧸|Transcode a picture or video|rice-capture transcode")
+    show "Capture" "" "${rows[@]}"
+    ;;
+  style)
+    show "Style" "" \
+      "󰏘|Theme|exec rice-menu theme" \
+      "󰸉|Wallpaper|exec rice-menu wallpaper" \
+      "󰛖|Font|rice-font" \
+      "󱄄|Screensavers|exec rice-menu screensavers" \
+      "󰋽|About this machine|rice-about"
+    ;;
+  theme)
+    rice-theme list | while read -r t; do
+      dir="$RICE_DIR/themes/$t"; [[ -d $dir ]] || dir="${XDG_CONFIG_HOME:-$HOME/.config}/rice/themes/$t"
+      img="$dir/preview.png"
+      [[ -f $img ]] || img="$RICE_DIR/wallpapers/$(sed -n 's/^wallpaper *= *"\(.*\)"/\1/p' "$dir/colors.toml")"
+      printf '%s\t%s\t%s\n' "$(sed -n 's/^name *= *"\(.*\)"/\1/p' "$dir/colors.toml")" "$(rice-wallpaper thumb "$img")" "$t"
+    done | grid "Theme" rice-theme-set
+    ;;
+  wallpaper)
+    rice-wallpaper list | while read -r img; do
+      printf '%s\t%s\t%s\n' "$(basename "${img%.*}")" "$(rice-wallpaper thumb "$img")" "$img"
+    done | grid "Wallpaper" rice-wallpaper-set
+    ;;
+  screensavers)
+    mapfile -t hacks < <(rice-screensaver list)
+    rows=(); for h in "${hacks[@]}"; do rows+=("󱄄|$h|rice-screensaver now $h"); done
+    show "Screensavers" "" "${rows[@]}"
+    ;;
+  setup)
+    show "Setup" "" \
+      "󰌌|Edit keybindings|edit \"\$HOME/.config/sxhkd/sxhkdrc\" 'pkill -USR1 -x sxhkd'" \
+      "󰕮|Edit bspwm|edit \"\$HOME/.config/bspwm/bspwmrc\" 'bspc wm -r'" \
+      "󰔟|Idle timings|edit \"\$HOME/.config/rice/idle.conf\" 'pkill -x xidlehook; rice-idle start'" \
+      "󱄄|Screensaver list|edit \"\$HOME/.config/rice/screensavers\"" \
+      "󰈙|Machine-specific settings|edit \"\$HOME/.config/rice/local.sh\"" \
+      "󰛢|Hooks folder|setsid -f thunar \"\$HOME/.config/rice/hooks\"" \
+      "󰑓|Restart rice daemons|rice-session restart" \
+      "󰚰|Update the rice|setsid -f st -c rice-float -e sh -c 'cd \"\$1\" && git pull --ff-only && ./install.sh --update; printf \"\\npress enter\"; read -r _' _ \"$RICE_DIR\""
+    ;;
+  *) sed -n '2,3p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

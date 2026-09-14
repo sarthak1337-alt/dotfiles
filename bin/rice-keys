@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# rice-keys - searchable cheat sheet of every keybinding, read from sxhkdrc.
+# A "## Section" line groups bindings; a "# text" line right above a hotkey
+# describes it.
+set -uo pipefail
+
+rc="${XDG_CONFIG_HOME:-$HOME/.config}/sxhkd/sxhkdrc"
+dim=$(rice-theme get dim)
+accent=$(rice-theme get accent)
+
+pretty() {
+  sed -E 's/@//g; s/\{_,/{/g; s/\b(super|ctrl|shift|alt)\b/\u\1/g; s/XF86Audio/Media /g; s/Print/PrtSc/g'
+}
+escape() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+
+awk '
+  /^## /                 { section = substr($0, 4); next }
+  /^# /                  { desc = substr($0, 3); next }
+  /^$/                   { desc = ""; next }
+  /^[^#[:space:]]/ && desc != "" { printf "%s\t%s\t%s\n", section, $0, desc; desc = "" }
+' "$rc" |
+  while IFS=$'\t' read -r section keys desc; do
+    printf '<span foreground="%s">%-30s</span>  %s  <span foreground="%s">· %s</span>\n' \
+      "$accent" "$(pretty <<<"$keys" | escape)" "$(escape <<<"$desc")" "$dim" "$(escape <<<"$section")"
+  done |
+  rofi -dmenu -i -markup-rows -no-custom -theme "$HOME/.config/rofi/menu.rasi" -p "Keybindings" \
+    -theme-str 'window { width: 900px; } listview { lines: 16; }' >/dev/null

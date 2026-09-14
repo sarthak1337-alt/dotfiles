@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# rice-font [family] - one monospace font for the whole rice: terminals, bar,
+# menus, popups and notifications. Without an argument, pick from the
+# installed Nerd Fonts. The choice is kept in ~/.config/rice/theme.override.toml,
+# so it survives theme changes.
+set -uo pipefail
+
+override="${XDG_CONFIG_HOME:-$HOME/.config}/rice/theme.override.toml"
+current=$(rice-theme get font 2>/dev/null)
+
+mapfile -t fonts < <(fc-list :spacing=mono family | tr ',' '\n' | grep -i 'nerd font$' | grep -vi 'mono$\|propo$' | sort -u)
+(( ${#fonts[@]} > 0 )) || { rice-notify send "Font" "No Nerd Fonts installed"; exit 1; }
+
+if [[ -n ${1:-} ]]; then
+  font="$1"
+else
+  active=""
+  for i in "${!fonts[@]}"; do [[ ${fonts[$i]} == "$current" ]] && active=$i; done
+  choice=$(printf '%s\n' "${fonts[@]}" |
+    rofi -dmenu -i -no-custom -format i -theme "$HOME/.config/rofi/menu.rasi" -p "Font" ${active:+-a "$active"}) || exit 0
+  font="${fonts[$choice]}"
+fi
+
+printf '%s\n' "${fonts[@]}" | grep -Fxq -- "$font" || { rice-notify send "Font" "\"$font\" is not an installed Nerd Font"; exit 1; }
+
+mkdir -p "$(dirname "$override")"
+touch "$override"
+sed -i '/^font *=/d' "$override"
+printf 'font = "%s"\n' "$font" >> "$override"
+
+rice-theme reload
+rice-hook font-set "$font"
+rice-notify send "Font" "$font · open terminals pick it up when reopened"

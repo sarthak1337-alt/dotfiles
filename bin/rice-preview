@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# rice-preview <file> - show a file in the terminal. Pictures and video frames
+# are drawn as real images (kitty's protocol in kitty, sixel in st), folders as
+# a tree, and everything else through bat. Used by `ff` (fzf) and `img`.
+set -uo pipefail
+
+file="${1:?usage: rice-preview <file>}"
+[[ -e $file ]] || exit 0
+
+cols="${FZF_PREVIEW_COLUMNS:-$(tput cols)}"
+lines="${FZF_PREVIEW_LINES:-$(( $(tput lines) - 2 ))}"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/rice/preview"
+
+picture() {
+  if [[ -n ${KITTY_WINDOW_ID:-} ]]; then
+    kitty +kitten icat --clear --transfer-mode=memory --stdin=no --place="${cols}x${lines}@0x0" -- "$1"
+  elif [[ $TERM == st* ]]; then
+    chafa --format sixel --size "${cols}x${lines}" -- "$1"
+  else
+    chafa --format symbols --size "${cols}x${lines}" -- "$1"
+  fi
+}
+
+if [[ -d $file ]]; then
+  eza --tree --level=2 --icons=always --color=always -- "$file" 2>/dev/null || ls -la -- "$file"
+  exit 0
+fi
+
+case "$(file -b --mime-type -- "$file")" in
+  image/*)
+    picture "$file"
+    ;;
+  video/*)
+    mkdir -p "$cache"
+    frame="$cache/$(printf '%s:%s' "$(realpath -- "$file")" "$(stat -c %Y -- "$file")" | sha1sum | cut -c1-16).jpg"
+    [[ -s $frame ]] || ffmpeg -loglevel error -y -ss 3 -i "$file" -frames:v 1 -vf scale=640:-1 "$frame" 2>/dev/null
+    [[ -s $frame ]] && picture "$frame"
+    ;;
+  *)
+    bat --style=numbers --color=always --line-range :300 -- "$file" 2>/dev/null || head -n 300 -- "$file"
+    ;;
+esac

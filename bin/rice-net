@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# rice-net - network state for the eww panel, and the actions it runs.
+#
+#   rice-net list              JSON: Wi-Fi radio, active connection, networks, VPNs
+#   rice-net radio on|off|toggle
+#   rice-net connect <id>      id from the last list; asks for a password in rofi if needed
+#   rice-net disconnect
+#   rice-net rescan
+#   rice-net vpn <id>          bring a VPN / WireGuard connection up or down
+#   rice-net share             show the current Wi-Fi network as a QR code
+#
+# SSIDs are chosen by whoever broadcasts them, so the panel only ever passes
+# the numeric id; the SSID is looked up again here from the cached list.
+set -uo pipefail
+
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+cache="$run/wifi.tsv"
+vpncache="$run/vpn.tsv"
+mkdir -p "$run"
+
+say()  { rice-notify send "$1" "${2:-}" -i network-wireless; }
+poke() { date +%s%N > "$run/net.rev"; }
+
+signal_glyph() {
+  local s=$1
+  if   (( s >= 75 )); then echo 󰤨
+  elif (( s >= 50 )); then echo 󰤥
+  elif (( s >= 25 )); then echo 󰤢
+  else echo 󰤟; fi
+}
+
+list() {
+  local radio=false has_wifi=false active_type="" active_name="" active_dev=""
+  nmcli -g TYPE device 2>/dev/null | grep -qx wifi && has_wifi=true
+  [[ $has_wifi == true && $(nmcli -t radio wifi 2>/dev/null) == enabled ]] && radio=true
+  IFS=: read -r active_type active_name active_dev < <(nmcli -g TYPE,STATE,CONNECTION,DEVICE device status 2>/dev/null |
+    awk -F: '$2 == "connected" && ($1 == "wifi" || $1 == "ethernet") { print $1 ":" $3 ":" $4; exit }')
+
+  local known
+  known=$(nmcli -g NAME,TYPE connection show 2>/dev/null | awk -F: '$2 == "802-11-wireless" { print $1 }')
+
+  # IN-USE:SIGNAL:SECURITY:SSID, strongest first, one row per SSID, top 8.
+  : > "$cache"
+  local inuse signal security ssid id=0 seen=$'\n'
+  while IFS=: read -r inuse signal security ssid; do
+    ssid=${ssid//\\:/:}
+    [[ -z $ssid || $seen == *$'\n'"$ssid"$'\n'* ]] && continue
+    seen+="$ssid"$'\n'
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$ssid" "$signal" "${security:---}" \
+      "$([[ $inuse == '*' ]] && echo 1 || echo 0)" \
+      "$(grep -Fxq -- "$ssid" <<<"$known" && echo 1 || echo 0)" >> "$cache"
+    (( ++id >= 8 )) && break
+  done < <(nmcli -g IN-USE,SIGNAL,SECURITY,SSID device wifi list --rescan no 2>/dev/null | sort -t: -k2,2nr)
+
+  # VPN and WireGuard profiles known to NetworkManager.
+  : > "$vpncache"
+  local active_names name type vid=0
+  active_names=$(nmcli -g NAME connection show --active 2>/dev/null)
+  while IFS=: read -r name type; do
+    [[ $type == vpn || $type == wireguard ]] || continue
+    printf '%s\t%s\t%s\n' "$vid" "$name" "$(grep -Fxq -- "$name" <<<"$active_names" && echo 1 || echo 0)" >> "$vpncache"
+    (( vid++ ))
+  done < <(nmcli -g NAME,TYPE connection show 2>/dev/null)
+
+  jq -cn --argjson radio "$radio" --argjson haswifi "$has_wifi" \
+    --arg atype "$active_type" --arg aname "$active_name" \
+    --argjson wifi "$(while IFS=$'\t' read -r i s sig sec use kn; do
+        jq -cn --argjson id "$i" --arg ssid "$s" --argjson signal "$sig" --arg sec "$sec" \
+          --argjson active "$([[ $use == 1 ]] && echo true || echo false)" \
+          --argjson known "$([[ $kn == 1 ]] && echo true || echo false)" \
+          --arg glyph "$(signal_glyph "$sig")" \
+          '{id: $id, ssid: $ssid, signal: $signal, active: $active, known: $known, glyph: $glyph,
+            sub: ([(if $active then "connected" elif $known then "saved" else empty end),
+                   (if $sec == "--" then "open" else "󰌾 " + $sec end)] | join(" · "))}'
+      done < "$cache" | jq -cs '.')" \
+    --argjson vpn "$(while IFS=$'\t' read -r i n a; do
+        jq -cn --argjson id "$i" --arg name "$n" --argjson active "$([[ $a == 1 ]] && echo true || echo false)" \
+          '{id: $id, name: $name, active: $active}'
+      done < "$vpncache" | jq -cs '.')" \
+    '{radio: $radio,
+      active: {type: $atype, name: $aname},
+      hasWifi: $haswifi,
+      wifi: $wifi, vpn: $vpn}'
+}
+
+field() { awk -F'\t' -v id="$1" -v col="$2" '$1 == id { print $col; exit }' "$3"; }
+
+connect() {
+  [[ ${1:-} =~ ^[0-9]+$ ]] || { echo "rice-net: connect takes an id" >&2; exit 2; }
+  local ssid security known pass
+  ssid=$(field "$1" 2 "$cache"); security=$(field "$1" 4 "$cache"); known=$(field "$1" 6 "$cache")
+  [[ -n $ssid ]] || { say "Wi-Fi" "That network is gone; rescan and try again"; exit 1; }
+
+  if [[ $known == 1 ]]; then
+    nmcli connection up id "$ssid" >/dev/null 2>&1 && say "Connected" "$ssid" || say "Could not connect" "$ssid"
+  elif [[ $security == "--" ]]; then
+    nmcli device wifi connect "$ssid" >/dev/null 2>&1 && say "Connected" "$ssid" || say "Could not connect" "$ssid"
+  elif [[ $security == *802.1X* ]]; then
+    say "Enterprise network" "Opening the connection editor for $ssid"
+    setsid -f nm-connection-editor >/dev/null 2>&1
+  else
+    pass=$(rofi -dmenu -password -theme "$HOME/.config/rofi/prompt.rasi" -p "$ssid" -mesg "Wi-Fi password") || exit 0
+    [[ -n $pass ]] || exit 0
+    local mgmt=wpa-psk
+    [[ $security == *WPA3* && $security != *WPA2* ]] && mgmt=sae
+    # The password reaches nmcli through a file descriptor, not the command line.
+    nmcli connection add type wifi con-name "$ssid" ssid "$ssid" wifi-sec.key-mgmt "$mgmt" >/dev/null 2>&1
+    if nmcli connection up id "$ssid" passwd-file <(printf '802-11-wireless-security.psk:%s\n' "$pass") >/dev/null 2>&1; then
+      say "Connected" "$ssid"
+    else
+      nmcli connection delete id "$ssid" >/dev/null 2>&1
+      say "Could not connect" "Wrong password for $ssid?"
+    fi
+  fi
+  poke
+}
+
+case "${1:-}" in
+  list) list ;;
+  radio)
+    case "${2:-toggle}" in
+      on)  nmcli radio wifi on ;;
+      off) nmcli radio wifi off ;;
+      *)   [[ $(nmcli -t radio wifi) == enabled ]] && nmcli radio wifi off || nmcli radio wifi on ;;
+    esac
+    poke ;;
+  connect) connect "${2:-}" ;;
+  disconnect)
+    dev=$(nmcli -g TYPE,DEVICE,STATE device status | awk -F: '$1 == "wifi" && $3 == "connected" { print $2; exit }')
+    [[ -n $dev ]] && nmcli device disconnect "$dev" >/dev/null && say "Wi-Fi" "Disconnected"
+    poke ;;
+  rescan) nmcli device wifi rescan >/dev/null 2>&1; poke ;;
+  vpn)
+    [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "rice-net: vpn takes an id" >&2; exit 2; }
+    name=$(field "$2" 2 "$vpncache"); active=$(field "$2" 3 "$vpncache")
+    [[ -n $name ]] || exit 1
+    if [[ $active == 1 ]]; then nmcli connection down id "$name" >/dev/null && say "VPN off" "$name"
+    else nmcli connection up id "$name" >/dev/null && say "VPN on" "$name" || say "VPN failed" "$name"; fi
+    poke ;;
+  share)
+    name=$(nmcli -g TYPE,STATE,CONNECTION device status | awk -F: '$1 == "wifi" && $2 == "connected" { print $3; exit }')
+    [[ -n $name ]] || { say "Wi-Fi" "Not connected to a Wi-Fi network"; exit 1; }
+    ssid=$(nmcli -g 802-11-wireless.ssid connection show id "$name")
+    psk=$(nmcli -s -g 802-11-wireless-security.psk connection show id "$name")
+    esc() { sed -e 's/[\\;,:"]/\\&/g' <<<"$1"; }
+    png="$run/wifi-qr.png"
+    printf 'WIFI:T:%s;S:%s;P:%s;;' "$([[ -n $psk ]] && echo WPA || echo nopass)" "$(esc "$ssid")" "$(esc "$psk")" |
+      qrencode -o "$png" -s 10 -m 2 --foreground="$(rice-theme get bg | tr -d '#')" --background="$(rice-theme get fg | tr -d '#')"
+    setsid -f feh --title "Wi-Fi: $ssid" --geometry 420x420 -Z "$png" >/dev/null 2>&1
+    ;;
+  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

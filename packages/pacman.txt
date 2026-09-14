@@ -1,0 +1,126 @@
+# Sakura Line - official repo packages (pacman -S --needed).
+# One package per line; text after # is ignored.
+
+# --- X session / window manager ---
+xorg-server
+xorg-xinit
+xorg-xrandr
+xorg-xprop
+xorg-xrdb
+xorg-xset
+xorg-xsetroot
+xorg-xwininfo
+bspwm
+sxhkd
+polybar
+picom
+rofi
+rofi-emoji
+dunst
+libnotify
+feh
+xdotool
+xclip
+xsettingsd
+wmname
+polkit-gnome
+xdg-utils
+
+# --- build toolchain (st, particles) ---
+base-devel
+git
+pkgconf
+libx11
+libxext
+libxft
+libxrandr
+libxfixes
+libxinerama
+cairo
+harfbuzz
+fontconfig
+freetype2
+gd
+imlib2
+
+# --- fonts / theming ---
+ttf-jetbrains-mono-nerd
+noto-fonts
+noto-fonts-cjk
+noto-fonts-emoji
+papirus-icon-theme
+gnome-themes-extra
+qt6ct
+
+# --- panels: audio, network, bluetooth, display, power, media ---
+pipewire
+pipewire-pulse
+wireplumber
+pamixer
+playerctl
+networkmanager
+bluez
+bluez-utils
+ddcutil
+power-profiles-daemon
+lm_sensors
+qrencode
+
+# --- calendar + reminders (Baikal CalDAV) ---
+khal
+vdirsyncer
+
+# --- idle, screensaver, lock ---
+xss-lock
+xsecurelock
+xscreensaver
+
+# --- capture: screenshot, recording, OCR, QR, colour, transcode ---
+flameshot
+maim
+slop
+gpu-screen-recorder
+ffmpeg
+imagemagick
+mpv
+v4l-utils
+tesseract
+tesseract-data-eng
+zbar
+xcolor
+
+# --- shell ---
+bash-completion
+starship
+fzf
+eza
+bat
+zoxide
+fd
+ripgrep
+tldr
+jq
+inotify-tools
+socat
+
+# --- terminal images ---
+chafa
+ueberzugpp
+yazi
+imv
+
+# --- boot splash (stock Arch theme, no branding) ---
+plymouth
+
+# --- apps ---
+kitty
+neovim
+thunar
+fastfetch
+btop
+cava
+
+# --- terminal toys ---
+cmatrix
+asciiquarium
+onefetch

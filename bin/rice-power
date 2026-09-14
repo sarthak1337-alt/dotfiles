@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# rice-power - system stats and power actions for the eww panel and power menu.
+#
+#   rice-power info                   JSON: CPU/GPU load and temperature, memory, uptime, profile
+#   rice-power profile <name>         power-saver | balanced | performance
+#   rice-power lock|suspend|logout|reboot|shutdown
+#                                     logout, reboot and shutdown ask first
+set -uo pipefail
+
+run="${XDG_RUNTIME_DIR:-/tmp}/rice"
+mkdir -p "$run"
+
+# CPU load since the previous call (the panel polls every few seconds).
+cpu_load() {
+  local now prev idle total pidle ptotal
+  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat
+  total=$((user + nice + system + idle + iowait + irq + softirq + steal))
+  idle=$((idle + iowait))
+  if [[ -f $run/cpu.prev ]]; then
+    read -r pidle ptotal < "$run/cpu.prev"
+    (( total > ptotal )) && echo $(( 100 * ((total - ptotal) - (idle - pidle)) / (total - ptotal) )) || echo 0
+  else
+    echo 0
+  fi
+  echo "$idle $total" > "$run/cpu.prev"
+}
+
+info() {
+  local sensors gpu_dev profile profiles
+  sensors=$(sensors -j 2>/dev/null || echo '{}')
+  gpu_dev=$(ls -d /sys/class/drm/card*/device 2>/dev/null | while read -r d; do [[ -f $d/gpu_busy_percent ]] && echo "$d" && break; done)
+  profile=$(powerprofilesctl get 2>/dev/null || echo "")
+  profiles=$(powerprofilesctl list 2>/dev/null | sed -n 's/^[* ]*\([a-z-]*\):$/\1/p' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+
+  jq -cn \
+    --argjson sensors "$sensors" \
+    --argjson cpu "$(cpu_load)" \
+    --arg gpubusy "$( [[ -n $gpu_dev ]] && cat "$gpu_dev/gpu_busy_percent" 2>/dev/null)" \
+    --arg vramused "$( [[ -n $gpu_dev ]] && cat "$gpu_dev/mem_info_vram_used" 2>/dev/null)" \
+    --arg vramtotal "$( [[ -n $gpu_dev ]] && cat "$gpu_dev/mem_info_vram_total" 2>/dev/null)" \
+    --arg mem "$(free -b | awk '/^Mem:/ { print $3 " " $2 }')" \
+    --arg uptime "$(uptime -p | sed 's/^up //; s/ hours\?/h/; s/ minutes\?/m/; s/ days\?/d/; s/,//g')" \
+    --arg profile "$profile" --argjson profiles "${profiles:-[]}" '
+    def temp($pat): [$sensors | to_entries[] | select(.key | test($pat)) | .value | to_entries[]
+                     | select(.key | test("^(Tctl|Tdie|edge|Package id 0|temp1)$")) | .value
+                     | to_entries[] | select(.key | endswith("_input")) | .value] | first // null;
+    def gib: (. / 1073741824 * 10 | round / 10 | tostring) + "G";
+    ($mem | split(" ") | map(tonumber)) as [$mused, $mtotal] |
+    {
+      cpu:    {load: $cpu, temp: (temp("k10temp|coretemp|zenpower") | if . then round else null end)},
+      gpu:    {load: ($gpubusy | tonumber? // null),
+               temp: (temp("amdgpu|radeon|nouveau") | if . then round else null end),
+               vram: (if $vramtotal != "" then (($vramused | tonumber | gib) + " / " + ($vramtotal | tonumber | gib)) else "" end)},
+      memory: {used: ($mused | gib), total: ($mtotal | gib), percent: ($mused * 100 / $mtotal | round)},
+      uptime: $uptime,
+      profile: $profile,
+      profiles: [ $profiles[] | {name: ., label: ({"power-saver": "saver", "balanced": "balanced", "performance": "performance"}[.] // .), active: (. == $profile)} ]
+    }'
+}
+
+confirm() {
+  local answer
+  answer=$(printf '%s\nCancel\n' "$1" | rofi -dmenu -theme "$HOME/.config/rofi/menu.rasi" -p "$2" -mesg "Are you sure?") || return 1
+  [[ $answer == "$1" ]]
+}
+
+case "${1:-}" in
+  info) info ;;
+  profile)
+    [[ ${2:-} =~ ^(power-saver|balanced|performance)$ ]] || { echo "rice-power: unknown profile '${2:-}'" >&2; exit 2; }
+    powerprofilesctl set "$2" && rice-notify send "Power profile" "$2" -i power-profile-"$2"-symbolic
+    ;;
+  lock)     rice-panel close; rice-lock ;;
+  suspend)  rice-panel close; systemctl suspend ;;
+  logout)   rice-panel close; confirm "󰍃  Log out" "Log out" && bspc quit ;;
+  reboot)   rice-panel close; confirm "󰜉  Reboot" "Reboot" && systemctl reboot ;;
+  shutdown) rice-panel close; confirm "󰐥  Shut down" "Shut down" && systemctl poweroff ;;
+  *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

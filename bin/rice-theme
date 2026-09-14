@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# rice-theme - render and apply a colour theme to every surface of the rice.
+#
+#   rice-theme set <name>     render themes/<name> and reload everything
+#   rice-theme reload         re-render the current theme (after editing a template)
+#   rice-theme list           available themes
+#   rice-theme current        name of the active theme
+#   rice-theme get <key>      one value from the active colors.toml (for scripts)
+#
+# Templates live in $RICE_DIR/templates/*.tpl and ~/.config/rice/templates/*.tpl
+# (yours win). Placeholders, for a key like  accent = "#92b9ea":
+#   {{ accent }}        #92b9ea
+#   {{ accent_strip }}  92b9ea
+#   {{ accent_rgb }}    146,185,234
+# A theme can ship a finished file (e.g. themes/foo/btop.theme); it is used
+# as-is instead of the template with the same output name.
+set -euo pipefail
+
+RICE_DIR="${RICE_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/rice"
+CURRENT="$STATE/theme"
+USER_TEMPLATES="${XDG_CONFIG_HOME:-$HOME/.config}/rice/templates"
+HOOKS="${XDG_CONFIG_HOME:-$HOME/.config}/rice/hooks/theme-set.d"
+OVERRIDE="${XDG_CONFIG_HOME:-$HOME/.config}/rice/theme.override.toml"
+
+die() { printf 'rice-theme: %s\n' "$*" >&2; exit 1; }
+
+theme_dir() {
+  local user="${XDG_CONFIG_HOME:-$HOME/.config}/rice/themes/$1"
+  if [[ -d $user ]]; then echo "$user"
+  elif [[ -d $RICE_DIR/themes/$1 ]]; then echo "$RICE_DIR/themes/$1"
+  else return 1; fi
+}
+
+# Emit "key<TAB>value" for every  key = value  line of a colors.toml.
+# Quoted values are taken whole (a colour's # is not a comment); bare values
+# stop at a trailing # comment.
+parse_colors() {
+  sed -n -E \
+    -e 's/^[[:space:]]*([a-z_][a-z0-9_]*)[[:space:]]*=[[:space:]]*"([^"]*)".*$/\1\t\2/p' \
+    -e 't' \
+    -e 's/^[[:space:]]*([a-z_][a-z0-9_]*)[[:space:]]*=[[:space:]]*([^"#[:space:]]([^#]*[^#[:space:]])?)[[:space:]]*(#.*)?$/\1\t\2/p' \
+    "$1"
+}
+
+# Build a sed program that replaces every placeholder form for every key.
+sed_program() {
+  local key value esc r g b
+  while IFS=$'\t' read -r key value; do
+    esc=$(printf '%s' "$value" | sed -e 's/[\\&|]/\\&/g')
+    printf 's|{{ *%s *}}|%s|g\n' "$key" "$esc"
+    if [[ $value =~ ^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$ ]]; then
+      r=$((16#${BASH_REMATCH[1]})); g=$((16#${BASH_REMATCH[2]})); b=$((16#${BASH_REMATCH[3]}))
+      printf 's|{{ *%s_strip *}}|%s|g\n' "$key" "${value#\#}"
+      printf 's|{{ *%s_rgb *}}|%s,%s,%s|g\n' "$key" "$r" "$g" "$b"
+    fi
+  done < <(parse_colors "$1" | tac | awk -F'\t' '!seen[$1]++')   # a later line wins (overrides)
+}
+
+render() {
+  local name="$1" src out next prog tpl base
+  src=$(theme_dir "$name") || die "no theme called '$name' (try: rice-theme list)"
+  [[ -f $src/colors.toml ]] || die "$src has no colors.toml"
+
+  mkdir -p "$STATE"
+  next=$(mktemp -d "$STATE/.theme.XXXXXX")
+  cp -a "$src/." "$next/"
+  # Your overrides (the font from rice-font, or any colour) apply on top of every theme.
+  if [[ -f $OVERRIDE ]]; then
+    printf '\n# --- from %s ---\n' "$OVERRIDE" >> "$next/colors.toml"
+    cat "$OVERRIDE" >> "$next/colors.toml"
+  fi
+  prog="$next/.render.sed"
+  sed_program "$next/colors.toml" > "$prog"
+
+  # User templates first, so a same-named built-in is skipped.
+  for tpl in "$USER_TEMPLATES"/*.tpl "$RICE_DIR"/templates/*.tpl; do
+    [[ -f $tpl ]] || continue
+    base=$(basename "$tpl" .tpl)
+    out="$next/$base"
+    [[ -e $out ]] && continue
+    sed -f "$prog" "$tpl" > "$out"
+    if grep -q '{{' "$out"; then
+      printf 'rice-theme: %s has unknown placeholders: %s\n' "$base" \
+        "$(grep -o '{{[^}]*}}' "$out" | sort -u | tr '\n' ' ')" >&2
+    fi
+  done
+  rm -f "$prog"
+
+  rm -rf "$CURRENT.old"
+  [[ -d $CURRENT ]] && mv "$CURRENT" "$CURRENT.old"
+  mv "$next" "$CURRENT"
+  rm -rf "$CURRENT.old"
+  printf '%s\n' "$name" > "$STATE/theme.name"
+}
+
+# signal_if_caught <SIGNAL> <process-name>: send the signal only to processes
+# whose SigCgt mask says they install a handler for it.
+signal_if_caught() {
+  local sig="$1" name="$2" num pid mask
+  num=$(kill -l "$sig")
+  for pid in $(pgrep -u "$UID" -x "$name"); do
+    mask=$(awk '/^SigCgt:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)
+    [[ -n $mask ]] && (( (16#$mask >> (num - 1)) & 1 )) && kill -"$sig" "$pid"
+  done
+  return 0
+}
+
+# Push the freshly rendered files into running programs. Each step is
+# best-effort: a program that isn't running simply has nothing to reload.
+apply() {
+  local t="$CURRENT"
+  [[ -f $t/bspwm-colors.sh ]] && pgrep -x bspwm >/dev/null && bash "$t/bspwm-colors.sh"
+  [[ -f $t/Xresources ]] && command -v xrdb >/dev/null && xrdb -merge "$t/Xresources"
+  # One cursor for X, GTK and Qt apps: the default cursor theme follows the rice's.
+  local cursor; cursor=$("$0" get cursor_theme 2>/dev/null)
+  if [[ -n $cursor ]]; then
+    mkdir -p "$HOME/.icons/default"
+    printf '[Icon Theme]\nInherits=%s\n' "$cursor" > "$HOME/.icons/default/index.theme"
+  fi
+  pgrep -x polybar >/dev/null && polybar-msg cmd restart >/dev/null 2>&1 || true
+  pgrep -x dunst >/dev/null && dunstctl reload >/dev/null 2>&1 || true
+  pgrep -x eww >/dev/null && eww reload >/dev/null 2>&1 || true
+  # USR1 makes kitty and the rice's st re-read their colours, but it kills a
+  # process that doesn't handle it (an older st build), so check first.
+  signal_if_caught USR1 kitty
+  signal_if_caught USR1 st
+  pgrep -x xsettingsd >/dev/null && pkill -HUP -x xsettingsd || true
+  if command -v flameshot >/dev/null; then
+    flameshot config --maincolor "$("$0" get accent)" --contrastcolor "$("$0" get bg)" \
+      --showhelp false --trayicon false >/dev/null 2>&1 || true
+  fi
+  if [[ -d $HOOKS ]]; then
+    for h in "$HOOKS"/*; do [[ -x $h ]] && "$h" "$(cat "$STATE/theme.name")" || true; done
+  fi
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  set)
+    [[ -n ${2:-} ]] || die "usage: rice-theme set <name>"
+    exec 9>"${XDG_RUNTIME_DIR:-/tmp}/rice-theme.lock"; flock 9
+    render "$2"; apply
+    # Only a theme change swaps the wallpaper; `reload` keeps the one you picked.
+    command -v rice-wallpaper >/dev/null && { rice-wallpaper theme-default >/dev/null 2>&1 || true; }
+    command -v notify-send >/dev/null && notify-send -a rice -u low "Theme" "$(grep -m1 '^name' "$CURRENT/colors.toml" | cut -d'"' -f2)" || true
+    ;;
+  render)
+    # Render only, touch no running program (used by install.sh and for testing).
+    render "${2:-$(cat "$STATE/theme.name" 2>/dev/null || echo sakura-line)}"
+    ;;
+  reload)
+    exec 9>"${XDG_RUNTIME_DIR:-/tmp}/rice-theme.lock"; flock 9
+    render "$(cat "$STATE/theme.name" 2>/dev/null || echo sakura-line)"; apply
+    ;;
+  list)
+    { ls -1 "$RICE_DIR/themes"; ls -1 "${XDG_CONFIG_HOME:-$HOME/.config}/rice/themes" 2>/dev/null; } | sort -u
+    ;;
+  current)
+    cat "$STATE/theme.name" 2>/dev/null || echo sakura-line
+    ;;
+  get)
+    [[ -n ${2:-} ]] || die "usage: rice-theme get <key>"
+    parse_colors "$CURRENT/colors.toml" | awk -F'\t' -v k="$2" '$1 == k { v = $2; found = 1 } END { if (found) print v; exit !found }'
+    ;;
+  *)
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    [[ -z $cmd ]] || exit 2
+    ;;
+esac
