@@ -102,9 +102,18 @@ case "${1:-main}" in
   theme)
     rice-theme list | while read -r t; do
       dir="$RICE_DIR/themes/$t"; [[ -d $dir ]] || dir="${XDG_CONFIG_HOME:-$HOME/.config}/rice/themes/$t"
+      [[ -f $dir/colors.toml ]] || continue
       img="$dir/preview.png"
-      [[ -f $img ]] || img="$RICE_DIR/wallpapers/$(sed -n 's/^wallpaper *= *"\(.*\)"/\1/p' "$dir/colors.toml")"
-      printf '%s\t%s\t%s\n' "$(sed -n 's/^name *= *"\(.*\)"/\1/p' "$dir/colors.toml")" "$(rice-wallpaper thumb "$img")" "$t"
+      if [[ ! -f $img ]]; then
+        wp=$(sed -n 's/^wallpaper *= *"\(.*\)"/\1/p' "$dir/colors.toml")
+        if [[ -f $wp ]]; then img="$wp"
+        elif [[ -f $RICE_DIR/wallpapers/$wp ]]; then img="$RICE_DIR/wallpapers/$wp"
+        elif [[ -f ${XDG_CONFIG_HOME:-$HOME/.config}/rice/wallpapers/$wp ]]; then img="${XDG_CONFIG_HOME:-$HOME/.config}/rice/wallpapers/$wp"
+        elif [[ -f $HOME/Pictures/Wallpapers/$wp ]]; then img="$HOME/Pictures/Wallpapers/$wp"
+        fi
+      fi
+      name=$(sed -n 's/^name *= *"\(.*\)"/\1/p' "$dir/colors.toml")
+      printf '%s\t%s\t%s\n' "${name:-$t}" "$(rice-wallpaper thumb "$img")" "$t"
     done | grid "Theme" rice-theme-set
     ;;
   wallpaper)

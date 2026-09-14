@@ -1,0 +1,55 @@
+# Nordic Frost - sampled from wallpapers/nordic-frost.jpg
+name = "Nordic Frost"
+mode = "dark"
+wallpaper = "nordic-frost.jpg"
+
+# --- surfaces, darkest to lightest ---
+bg        = "#0d131a"
+bg_alt    = "#131b24"
+surface   = "#1b2533"
+overlay   = "#243244"
+selection = "#2d3e54"
+border    = "#3c516c"
+
+# --- text ---
+fg     = "#e8eff7"
+fg_alt = "#c8d8e8"
+dim    = "#7d93ab"
+muted  = "#34455a"
+
+# --- roles ---
+accent     = "#68a6d4"
+accent_alt = "#4478a3"
+urgent     = "#de505b"
+
+# --- named colours (ANSI 1-6) and their bright twins (9-14) ---
+red     = "#d45b65"
+green   = "#56b88e"
+yellow  = "#e5a840"
+blue    = "#5a98cf"
+magenta = "#a47eb8"
+cyan    = "#5ec0be"
+
+bright_red     = "#e26c75"
+bright_green   = "#68cca0"
+bright_yellow  = "#f2be5c"
+bright_blue    = "#78b4e8"
+bright_magenta = "#ba94ce"
+bright_cyan    = "#74d4d2"
+
+# --- translucency ---
+alpha     = "0.76"
+alpha_hex = "c2"
+
+# --- shape and type ---
+font          = "JetBrainsMono Nerd Font"
+font_size     = "11"
+radius        = "12"
+radius_small  = "8"
+border_width  = "1"
+window_border = "2"
+gap           = "10"
+icon_theme    = "Papirus-Dark"
+gtk_theme     = "Adwaita-dark"
+cursor_theme  = "Bibata-Modern-Classic"
+cursor_size   = "20"

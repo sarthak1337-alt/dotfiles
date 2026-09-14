@@ -165,6 +165,10 @@ super + ctrl + space
 super + shift + ctrl + space
 	rice-menu theme
 
+# Theme picker (quick shortcut)
+super + shift + t
+	rice-menu theme
+
 # Quick toggles
 super + ctrl + o
 	rice-menu toggles

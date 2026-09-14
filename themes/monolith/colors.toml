@@ -1,0 +1,55 @@
+# Monolith - sampled from wallpapers/monolith.png
+name = "Monolith"
+mode = "dark"
+wallpaper = "monolith.png"
+
+# --- surfaces, darkest to lightest ---
+bg        = "#0a1317"
+bg_alt    = "#0f1b20"
+surface   = "#16262e"
+overlay   = "#1e343e"
+selection = "#284452"
+border    = "#355b6c"
+
+# --- text ---
+fg     = "#dff5f0"
+fg_alt = "#bee5dd"
+dim    = "#6e9ca0"
+muted  = "#264349"
+
+# --- roles ---
+accent     = "#4ec7b0"
+accent_alt = "#369986"
+urgent     = "#e66075"
+
+# --- named colours (ANSI 1-6) and their bright twins (9-14) ---
+red     = "#d95f6e"
+green   = "#56bf9a"
+yellow  = "#d6b565"
+blue    = "#3d9ed6"
+magenta = "#9b78b5"
+cyan    = "#4ec7b0"
+
+bright_red     = "#e67381"
+bright_green   = "#6ad9b2"
+bright_yellow  = "#e8ca7d"
+bright_blue    = "#57b4eb"
+bright_magenta = "#b390cd"
+bright_cyan    = "#69e0c9"
+
+# --- translucency ---
+alpha     = "0.76"
+alpha_hex = "c2"
+
+# --- shape and type ---
+font          = "JetBrainsMono Nerd Font"
+font_size     = "11"
+radius        = "12"
+radius_small  = "8"
+border_width  = "1"
+window_border = "2"
+gap           = "10"
+icon_theme    = "Papirus-Dark"
+gtk_theme     = "Adwaita-dark"
+cursor_theme  = "Bibata-Modern-Classic"
+cursor_size   = "20"

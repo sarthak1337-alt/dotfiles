@@ -1,0 +1,59 @@
+# Pirna - sampled from wallpapers/bellotto-pirna.jpg (Bernardo Bellotto, 1750s).
+# Every surface (bspwm, polybar, rofi, dunst, eww, st, kitty, GTK, btop,
+# xsecurelock, starship) is rendered from these keys by `rice-theme`.
+# Colour values must be #rrggbb; templates add alpha where they need it.
+
+name = "Pirna"
+mode = "dark"
+wallpaper = "bellotto-pirna.jpg"
+
+# --- surfaces, darkest to lightest ---
+bg        = "#121516"
+bg_alt    = "#181d1e"
+surface   = "#212729"
+overlay   = "#2b3336"
+selection = "#333d40"
+border    = "#445053"
+
+# --- text ---
+fg     = "#ede8dc"
+fg_alt = "#cdc7b7"
+dim    = "#828c8a"
+muted  = "#3c4648"
+
+# --- roles ---
+accent     = "#78a6ba"
+accent_alt = "#547e8f"
+urgent     = "#c45842"
+
+# --- named colours (ANSI 1-6) and their bright twins (9-14) ---
+red     = "#b8543f"
+green   = "#7b9456"
+yellow  = "#cca056"
+blue    = "#658ea4"
+magenta = "#a17b8f"
+cyan    = "#6e9e98"
+
+bright_red     = "#c45842"
+bright_green   = "#8ea559"
+bright_yellow  = "#dfb56c"
+bright_blue    = "#78a6ba"
+bright_magenta = "#ba94a8"
+bright_cyan    = "#84b5ae"
+
+# --- translucency: bar, popups, menus, notifications and terminals all use it ---
+alpha     = "0.78"
+alpha_hex = "c7"
+
+# --- shape and type, shared by every popup, menu and toast ---
+font          = "JetBrainsMono Nerd Font"
+font_size     = "11"
+radius        = "12"
+radius_small  = "8"
+border_width  = "1"
+window_border = "2"
+gap           = "10"
+icon_theme    = "Papirus-Dark"
+gtk_theme     = "Adwaita-dark"
+cursor_theme  = "Bibata-Modern-Classic"
+cursor_size   = "20"

@@ -31,8 +31,13 @@ case "${1:-}" in
     if [[ -f $remembered && -f $(cat "$remembered") ]]; then apply "$(cat "$remembered")"; else "$0" theme-default; fi
     ;;
   theme-default)
-    name=$(rice-theme get wallpaper 2>/dev/null)
-    [[ -n $name && -f $RICE_DIR/wallpapers/$name ]] && apply "$RICE_DIR/wallpapers/$name"
+    name=$(rice-theme get wallpaper 2>/dev/null || true)
+    [[ -z $name ]] && exit 0
+    if [[ -f $name ]]; then apply "$name";
+    elif [[ -f $RICE_DIR/wallpapers/$name ]]; then apply "$RICE_DIR/wallpapers/$name";
+    elif [[ -f ${XDG_CONFIG_HOME:-$HOME/.config}/rice/wallpapers/$name ]]; then apply "${XDG_CONFIG_HOME:-$HOME/.config}/rice/wallpapers/$name";
+    elif [[ -f $HOME/Pictures/Wallpapers/$name ]]; then apply "$HOME/Pictures/Wallpapers/$name";
+    fi
     ;;
   next)
     mapfile -t all < <(list)

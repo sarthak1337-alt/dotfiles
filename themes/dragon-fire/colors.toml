@@ -1,0 +1,55 @@
+# Dragon Fire - sampled from wallpapers/dragon-fire.jpg
+name = "Dragon Fire"
+mode = "dark"
+wallpaper = "dragon-fire.jpg"
+
+# --- surfaces, darkest to lightest ---
+bg        = "#140b0f"
+bg_alt    = "#1a0f14"
+surface   = "#24161c"
+overlay   = "#321e27"
+selection = "#422834"
+border    = "#573544"
+
+# --- text ---
+fg     = "#faece8"
+fg_alt = "#dec7c1"
+dim    = "#96747b"
+muted  = "#402632"
+
+# --- roles ---
+accent     = "#f5796b"
+accent_alt = "#c94f42"
+urgent     = "#ff4a5d"
+
+# --- named colours (ANSI 1-6) and their bright twins (9-14) ---
+red     = "#e05853"
+green   = "#7ea66b"
+yellow  = "#e89f5a"
+blue    = "#688dc4"
+magenta = "#c76d91"
+cyan    = "#6fb0a6"
+
+bright_red     = "#f26d68"
+bright_green   = "#94bc80"
+bright_yellow  = "#f5b373"
+bright_blue    = "#82a5dc"
+bright_magenta = "#dc82a6"
+bright_cyan    = "#85c7bd"
+
+# --- translucency ---
+alpha     = "0.78"
+alpha_hex = "c7"
+
+# --- shape and type ---
+font          = "JetBrainsMono Nerd Font"
+font_size     = "11"
+radius        = "12"
+radius_small  = "8"
+border_width  = "1"
+window_border = "2"
+gap           = "10"
+icon_theme    = "Papirus-Dark"
+gtk_theme     = "Adwaita-dark"
+cursor_theme  = "Bibata-Modern-Classic"
+cursor_size   = "20"

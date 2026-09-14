@@ -2,6 +2,7 @@
 # rice-theme - render and apply a colour theme to every surface of the rice.
 #
 #   rice-theme set <name>     render themes/<name> and reload everything
+#   rice-theme select         open the visual theme selector
 #   rice-theme reload         re-render the current theme (after editing a template)
 #   rice-theme list           available themes
 #   rice-theme current        name of the active theme
@@ -153,8 +154,14 @@ case "$cmd" in
     exec 9>"${XDG_RUNTIME_DIR:-/tmp}/rice-theme.lock"; flock 9
     render "$(cat "$STATE/theme.name" 2>/dev/null || echo sakura-line)"; apply
     ;;
+  select|picker|menu)
+    command -v rice-menu >/dev/null && exec rice-menu theme || die "rice-menu not found"
+    ;;
   list)
-    { ls -1 "$RICE_DIR/themes"; ls -1 "${XDG_CONFIG_HOME:-$HOME/.config}/rice/themes" 2>/dev/null; } | sort -u
+    {
+      [[ -d $RICE_DIR/themes ]] && ls -1 "$RICE_DIR/themes" || true
+      [[ -d ${XDG_CONFIG_HOME:-$HOME/.config}/rice/themes ]] && ls -1 "${XDG_CONFIG_HOME:-$HOME/.config}/rice/themes" || true
+    } 2>/dev/null | sort -u
     ;;
   current)
     cat "$STATE/theme.name" 2>/dev/null || echo sakura-line
