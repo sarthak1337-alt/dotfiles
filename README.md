@@ -69,7 +69,8 @@ curl -fsSL https://rice.srtk.in/install.sh | bash
 or from a clone:
 
 ```sh
-git clone https://git.srtk.in/sarthak/dotfiles.git ~/rice
+git clone https://github.com/sarthak1337-alt/dotfiles.git ~/rice
+# or self-hosted: git clone https://git.srtk.in/sarthak/dotfiles.git ~/rice
 ~/rice/install.sh              # full install, safe to re-run
 ~/rice/install.sh --dry-run    # print every step, change nothing
 ~/rice/install.sh --update     # pull, re-link, re-render, rebuild what changed

@@ -13,7 +13,7 @@
 # splash. Anything it would replace is moved to ~/.rice-backup-<date>/ first.
 set -uo pipefail
 
-RICE_REMOTE="${RICE_REMOTE:-https://git.srtk.in/sarthak/dotfiles.git}"
+RICE_REMOTE="${RICE_REMOTE:-https://github.com/sarthak1337-alt/dotfiles.git}"
 RICE_HOME="${RICE_HOME:-$HOME/rice}"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/rice"
 BACKUP="$HOME/.rice-backup-$(date +%Y%m%d-%H%M%S)"
